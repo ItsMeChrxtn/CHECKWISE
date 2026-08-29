@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CheckWise talks to a server on the school LAN over plain http, so cleartext
+  has to be permitted.
+
+  It is permitted for everything rather than for a list of addresses because
+  this config matches hostnames, not CIDR ranges: there is no way to write
+  "any 192.168.x.x" here, and the server address is a setting the teacher types
+  in, so it cannot be known at build time either.
+
+  If CheckWise is ever put behind https on a real domain, flip this to false and
+  list only the dev addresses in a <domain-config> below.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true"/>
+</network-security-config>

@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Environment - never commit real secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Build output
+dist/
+build/
+client/dist/
+
+# Uploaded and generated files (keep the folder structure only)
+server/uploads/**/*
+!server/uploads/**/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test / cache
+coverage/
+.vite/
+.cache/
+
+# Tesseract language data, downloaded on first use
+server/.tesseract/

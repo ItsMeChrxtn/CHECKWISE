@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The splash is paper, like every other surface. A dark launch screen
+         followed by a light app is a jolt, and dark masses were the thing that
+         made the old design tiring. -->
+    <color name="splash_bg">#FFFFFF</color>
+    <color name="brand_600">#3A5BB0</color>
+</resources>

@@ -1,0 +1,177 @@
+@import "tailwindcss";
+
+/*
+ * CheckWise design tokens.
+ *
+ * Light, quiet, and mostly white. The previous palette leaned on a deep navy
+ * for whole surfaces — the sidebar, the hero, the splash — with a brass accent
+ * on top. Large dark masses next to a metallic accent are tiring to look at for
+ * the length of a marking session, so the weight is gone: paper-white surfaces,
+ * hairline rules, and a single calm blue that appears only where something is
+ * interactive or selected.
+ *
+ * The rule for colour is that it has to mean something. Brand blue = you can act
+ * on this. Green, red, amber = the grader's verdict. Everything else is ink on
+ * paper.
+ *
+ * `accent-*` is kept as an alias of the brand scale so no stray class breaks;
+ * the brass it used to name is gone.
+ */
+@theme {
+  /* The one accent. Desaturated on purpose: legible on white without glare. */
+  --color-brand-50: #f2f6fd;
+  --color-brand-100: #e3ecfa;
+  --color-brand-200: #c8d9f4;
+  --color-brand-300: #9db9e9;
+  --color-brand-400: #6d92da;
+  --color-brand-500: #4a72c9;
+  --color-brand-600: #3a5bb0;
+  --color-brand-700: #31498d;
+  --color-brand-800: #2b3e73;
+  --color-brand-900: #26355e;
+
+  --color-accent-50: #f2f6fd;
+  --color-accent-100: #e3ecfa;
+  --color-accent-200: #c8d9f4;
+  --color-accent-300: #9db9e9;
+  --color-accent-400: #6d92da;
+  --color-accent-500: #4a72c9;
+  --color-accent-600: #3a5bb0;
+  --color-accent-700: #31498d;
+
+  /* Ink on paper. A hair cool so it sits with the blue, and never pure black —
+     #000 on #fff is the harshest pairing on a screen. */
+  --color-ink-50: #fafafb;
+  --color-ink-100: #f4f4f6;
+  --color-ink-200: #e8e9ec;
+  --color-ink-300: #d6d8dd;
+  --color-ink-400: #a1a5ae;
+  --color-ink-500: #767b86;
+  --color-ink-600: #565b66;
+  --color-ink-700: #3f434c;
+  --color-ink-800: #2a2d34;
+  --color-ink-900: #1a1c21;
+
+  /* The grader's verdict. Muted, so a page of results reads calmly. */
+  --color-pass-50: #eef7f1;
+  --color-pass-100: #d6ebde;
+  --color-pass-300: #86c2a1;
+  --color-pass-600: #2f7d54;
+  --color-pass-700: #256340;
+
+  --color-fail-50: #fdf0f0;
+  --color-fail-100: #f8dada;
+  --color-fail-300: #dd9a9e;
+  --color-fail-600: #b4444a;
+  --color-fail-700: #90363b;
+
+  --color-warn-50: #fdf6e9;
+  --color-warn-100: #f8e8c6;
+  --color-warn-300: #dfc07a;
+  --color-warn-600: #9c7420;
+  --color-warn-700: #7c5c19;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  /* Kept for the wordmark only. Nothing in the interface sets it. */
+  --font-serif: "Source Serif 4", ui-serif, Georgia, Cambria, "Times New Roman", serif;
+
+  /* Softly rounded. Squared corners read as a form to fill in; this should feel
+     like a tool you are glad to open. */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-white text-ink-700 font-sans antialiased;
+    /* Lining tabular figures, so a column of scores does not jitter as it
+       updates. */
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  /* Sans throughout. The serif headings were part of the heaviness. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-sans font-semibold text-ink-900;
+    letter-spacing: -0.018em;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
+
+  ::selection {
+    @apply bg-brand-100 text-brand-900;
+  }
+}
+
+@layer utilities {
+  /*
+   * The surface everything sits on. One hairline, no shadow — depth comes from
+   * the rule and the whitespace around it.
+   */
+  /*
+   * `.card-sealed` was a brass-topped panel and is now simply the card, kept as
+   * an alias so the pages that used it keep working without a special case.
+   *
+   * It shares this rule rather than doing `@apply card`: Tailwind v4 will not
+   * apply a custom utility from inside the layer that defines it, and that
+   * failure takes the whole stylesheet down rather than just the one class.
+   */
+  .card,
+  .card-sealed {
+    @apply rounded-lg border border-ink-200 bg-white;
+  }
+
+  /* A quiet section label. Sentence case in mid-grey rather than letterspaced
+     capitals: the shouty version put noise above every single panel. */
+  .eyebrow {
+    @apply text-[13px] font-medium text-ink-500;
+  }
+
+  .eyebrow-onnavy {
+    @apply text-[13px] font-medium text-ink-500;
+  }
+
+  /* A figure meant to be read and compared. */
+  .figure {
+    @apply font-sans font-semibold tracking-tight text-ink-900;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  /* Rows separated by hairlines rather than gaps. */
+  .ruled > * + * {
+    @apply border-t border-ink-200;
+  }
+
+  /* The one place elevation is allowed: things that float over the page. */
+  .overlay {
+    box-shadow:
+      0 1px 2px rgb(26 28 33 / 0.04),
+      0 8px 24px -8px rgb(26 28 33 / 0.12);
+  }
+
+  /* A very soft lift for cards that respond to the pointer. */
+  .lift {
+    transition:
+      border-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+
+  .lift:hover {
+    @apply border-ink-300;
+    box-shadow:
+      0 1px 2px rgb(26 28 33 / 0.04),
+      0 4px 12px -6px rgb(26 28 33 / 0.1);
+  }
+}
