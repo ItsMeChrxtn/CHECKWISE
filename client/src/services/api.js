@@ -8,6 +8,26 @@ const api = axios.create({
   timeout: 30000,
 });
 
+/**
+ * Where the server itself lives, with the `/api` suffix stripped off.
+ *
+ * Empty during development, because the Vite dev server proxies both `/api`
+ * and `/uploads` to localhost:5000 and a relative path already works.
+ *
+ * In a deployed build there is no proxy: the site is on one host and the API
+ * on another, so anything the server serves outside `/api` — the scan images
+ * under `/uploads` — has to be addressed absolutely or it 404s against the
+ * static host.
+ */
+export const API_ORIGIN = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
+
+/** Resolves a server-relative file path (`/uploads/...`) for the current host. */
+export function fileUrl(path) {
+  if (!path) return "";
+  if (/^https?:\/\//.test(path)) return path;
+  return `${API_ORIGIN}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) config.headers.Authorization = `Bearer ${token}`;

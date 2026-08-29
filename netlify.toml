@@ -1,0 +1,35 @@
+# Netlify build settings for the CheckWise web client.
+#
+# Kept in the repo rather than typed into the Netlify UI so the settings are
+# versioned and cannot drift. Netlify reads this automatically; the matching
+# fields in the dashboard can be left blank.
+#
+# Only `client/` is deployed here. `server/` is an Express + MongoDB API and
+# has to live somewhere that runs Node continuously — Render, in this setup.
+
+[build]
+  # Commands run from inside client/, and `publish` is resolved relative to it,
+  # so this publishes client/dist.
+  base = "client"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # Pinned so the deploy compiles on the same major version the project was
+  # developed against, rather than whatever Netlify happens to default to.
+  NODE_VERSION = "22"
+
+# The SPA fallback also lives in client/public/_redirects. It is repeated here
+# because a rule in this file is easier to find when a route starts 404ing.
+# Real files still win, so /checkwise.apk is served as the APK.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# The APK is a download, not something to render in the browser tab.
+[[headers]]
+  for = "/checkwise.apk"
+  [headers.values]
+    Content-Type = "application/vnd.android.package-archive"
+    Content-Disposition = "attachment; filename=\"checkwise.apk\""

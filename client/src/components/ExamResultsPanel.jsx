@@ -4,6 +4,7 @@ import Button from "./Button.jsx";
 import CameraScanner from "./CameraScanner.jsx";
 import Input from "./Input.jsx";
 import { Spinner } from "./States.jsx";
+import { fileUrl } from "../services/api.js";
 import { resultService } from "../services/resultService.js";
 import { useToast } from "../hooks/useToast.js";
 
@@ -342,7 +343,7 @@ function ResultReview({ resultId, onSaved }) {
                   here instead of going back to the pile. */}
               {answer.writeInCrop && (
                 <img
-                  src={`/uploads/${answer.writeInCrop}`}
+                  src={fileUrl(`/uploads/${answer.writeInCrop}`)}
                   alt={`What the student wrote for item ${answer.sectionNumber ?? answer.questionNumber}`}
                   className="h-8 w-40 shrink-0 rounded border border-ink-200 bg-white object-contain"
                 />
