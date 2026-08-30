@@ -101,7 +101,7 @@ const PRINCIPLES = [
 const ANDROID_BUILD = {
   file: "/checkwise.apk",
   version: "0.1.0",
-  size: "54.5 MB",
+  size: "54.8 MB",
   minAndroid: "7.0",
 };
 

@@ -10,12 +10,14 @@ class AppCard extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(16),
     this.onTap,
+    this.onLongPress,
     this.sealed = false,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   /// Marks the primary panel on a screen. Only slightly stronger than a plain
   /// card — a louder treatment is what made the old design shout.
@@ -37,11 +39,15 @@ class AppCard extends StatelessWidget {
         border: Border.all(color: sealed ? Slate.c300 : Slate.c200),
       ),
       clipBehavior: Clip.antiAlias,
-      child: onTap == null
+      child: onTap == null && onLongPress == null
           ? content
           : Material(
               color: Colors.transparent,
-              child: InkWell(onTap: onTap, child: content),
+              child: InkWell(
+                onTap: onTap,
+                onLongPress: onLongPress,
+                child: content,
+              ),
             ),
     );
   }
