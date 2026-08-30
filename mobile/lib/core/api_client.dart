@@ -152,6 +152,23 @@ class ApiClient {
     );
   }
 
+  /// Saves a file the API serves — the generated answer sheet — to disk.
+  ///
+  /// Goes through the same interceptors as everything else, so the download
+  /// carries the Authorization header. The route is behind `protect`, and a
+  /// plain URL opened in a browser would come back 401.
+  Future<void> download(String path, String savePath) async {
+    try {
+      await _dio.download(
+        path,
+        savePath,
+        options: Options(receiveTimeout: const Duration(minutes: 2)),
+      );
+    } on DioException catch (error) {
+      throw _translate(error);
+    }
+  }
+
   Options? _withTimeout(Duration? timeout) {
     if (timeout == null) return null;
     return Options(sendTimeout: timeout, receiveTimeout: timeout);

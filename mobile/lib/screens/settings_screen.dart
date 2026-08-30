@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../core/api_config.dart';
 import '../core/formatters.dart';
 import '../core/theme.dart';
 import '../state/auth_controller.dart';
 import '../widgets/common.dart';
-import 'server_screen.dart';
 
 /// Who is signed in, where the app points, and an honest account of what this
 /// app deliberately does not do.
@@ -100,48 +98,16 @@ class SettingsScreen extends StatelessWidget {
           ),
 
           const SizedBox(height: 20),
-          const SectionHeader(title: 'Connection'),
-          const SizedBox(height: 10),
-          AppCard(
-            padding: EdgeInsets.zero,
-            // ListTile paints its background and ink splashes on the nearest
-            // Material ancestor, which the card's own DecoratedBox would sit on
-            // top of — so it needs a transparent Material of its own.
-            child: Material(
-              color: Colors.transparent,
-              child: ListTile(
-                leading: const Icon(Icons.dns_outlined, color: Slate.c500),
-                title: const Text(
-                  'CheckWise server',
-                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  ApiConfig.baseUrl,
-                  style: const TextStyle(fontSize: 12.5, color: Slate.c500),
-                ),
-                trailing: const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Slate.c400,
-                ),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ServerScreen()),
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-          const SectionHeader(title: 'On the web app'),
+          const SectionHeader(title: 'How CheckWise works'),
           const SizedBox(height: 10),
           const AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'This app is the scanner half of CheckWise. Writing an exam, '
-                  'uploading its PDF, reviewing the parsed answer key and '
-                  'printing the answer sheet are all desk work, and stay on '
-                  'the web app.',
+                  'Everything happens here: write the exam, upload its PDF, '
+                  'confirm the answer key, print the sheet, then scan the '
+                  'finished papers.',
                   style: TextStyle(
                     fontSize: 13,
                     color: Slate.c600,
@@ -151,7 +117,7 @@ class SettingsScreen extends StatelessWidget {
                 SizedBox(height: 14),
                 _Step(
                   number: '1',
-                  text: 'Create the exam and upload its PDF on the web app.',
+                  text: 'Create the exam and upload its PDF.',
                 ),
                 _Step(
                   number: '2',
@@ -163,7 +129,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 _Step(
                   number: '4',
-                  text: 'Come back here and scan the completed papers.',
+                  text: 'Scan the completed papers with the camera.',
                   last: true,
                 ),
               ],

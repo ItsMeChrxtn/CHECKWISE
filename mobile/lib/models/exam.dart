@@ -146,6 +146,7 @@ class Exam {
     this.hasAnswerSheet = false,
     this.hasExamPdf = false,
     this.strictWrittenAnswers = true,
+    this.modifiedTrueFalseScoring = 'whole',
     this.questions = const [],
     this.createdAt,
     this.updatedAt,
@@ -172,6 +173,8 @@ class Exam {
           json['answerSheetPath'] != null,
       hasExamPdf: json['examPdfPath'] != null,
       strictWrittenAnswers: asBool(grading['strictWrittenAnswers'], true),
+      modifiedTrueFalseScoring:
+          asString(grading['modifiedTrueFalseScoring'], 'whole'),
       // Absent from list rows, which select the questions array away.
       questions: questions is List
           ? questions
@@ -197,6 +200,10 @@ class Exam {
   final bool hasAnswerSheet;
   final bool hasExamPdf;
   final bool strictWrittenAnswers;
+
+  /// "whole" — one point, and both halves must be right.
+  /// "split" — the truth value and the correction score independently.
+  final String modifiedTrueFalseScoring;
   final List<Question> questions;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -211,16 +218,16 @@ class Exam {
   /// geometry the sheet was printed with.
   bool get canScan => status == 'ready' && hasAnswerSheet;
 
-  /// Why scanning is unavailable, phrased for the teacher — the two blockers
-  /// have completely different fixes, and both live on the web app.
+  /// Why scanning is unavailable, phrased for the teacher. Both blockers are
+  /// fixable on the phone now, so these name the step rather than send them
+  /// somewhere else.
   String? get scanBlockedReason {
     if (status != 'ready') {
-      return 'Confirm this exam’s answer key on the CheckWise web app before '
-          'scanning papers.';
+      return 'Confirm this exam’s answer key before scanning papers.';
     }
     if (!hasAnswerSheet) {
-      return 'Generate this exam’s answer sheet on the web app first — the '
-          'scanner reads its layout to know where the bubbles are.';
+      return 'Generate this exam’s answer sheet first — the scanner reads its '
+          'layout to know where the bubbles are.';
     }
     return null;
   }

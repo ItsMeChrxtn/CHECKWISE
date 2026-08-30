@@ -8,6 +8,10 @@ import '../models/exam.dart';
 import '../models/result.dart';
 import '../services/services.dart';
 import '../widgets/common.dart';
+import 'package:open_filex/open_filex.dart';
+
+import 'answer_key_screen.dart';
+import 'exam_form_screen.dart';
 import 'result_detail_screen.dart';
 import 'scan_screen.dart';
 
@@ -26,6 +30,7 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
   Exam? _exam;
   List<Result> _results = const [];
   bool _loading = true;
+  bool _working = false;
   String? _error;
 
   @override
@@ -60,6 +65,68 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
         _error = error.message;
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _openAnswerKey() async {
+    final exam = _exam;
+    if (exam == null) return;
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => AnswerKeyScreen(exam: exam)),
+    );
+    if (changed == true) await _load();
+  }
+
+  Future<void> _edit() async {
+    final exam = _exam;
+    if (exam == null) return;
+    final updated = await Navigator.of(context).push<Exam>(
+      MaterialPageRoute(builder: (_) => ExamFormScreen(exam: exam)),
+    );
+    if (updated != null) await _load();
+  }
+
+  /// Builds the printable sheet, then offers to open it straight away.
+  Future<void> _generateSheet() async {
+    final exam = _exam;
+    if (exam == null || _working) return;
+
+    setState(() => _working = true);
+    try {
+      final result = await context.read<ExamService>().generateAnswerSheet(exam.id);
+      if (!mounted) return;
+      setState(() => _working = false);
+      showToast(context, result.message);
+      await _load();
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _working = false);
+      showToast(context, error.message, isError: true);
+    }
+  }
+
+  /// The sheet is behind the session, so it is fetched with the token attached
+  /// and handed to whatever app the phone uses for PDFs.
+  Future<void> _openSheet() async {
+    final exam = _exam;
+    if (exam == null || _working) return;
+
+    setState(() => _working = true);
+    try {
+      final file = await context
+          .read<ExamService>()
+          .downloadAnswerSheet(exam.id, exam.examCode);
+      if (!mounted) return;
+      setState(() => _working = false);
+
+      final opened = await OpenFilex.open(file.path);
+      if (opened.type != ResultType.done && mounted) {
+        showToast(context, 'Saved to ${file.path}, but no app could open it.', isError: true);
+      }
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _working = false);
+      showToast(context, error.message, isError: true);
     }
   }
 
@@ -102,8 +169,15 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
       appBar: AppBar(
         title: Text(exam?.examCode ?? 'Exam'),
         actions: [
+          if (exam != null)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit exam',
+              onPressed: _loading ? null : _edit,
+            ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Refresh',
             onPressed: _loading ? null : _load,
           ),
         ],
@@ -214,12 +288,16 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
             ),
           ),
 
-          // The two reasons a paper cannot be read, each with the fix. Both
-          // live on the web app, so the phone explains rather than pretends.
-          if (!exam.canScan) ...[
-            const SizedBox(height: 12),
-            _Blocked(reason: exam.scanBlockedReason!),
-          ],
+          // The road from draft to scannable, with the next step actionable
+          // rather than described. All three steps happen on the phone now.
+          const SizedBox(height: 12),
+          _Workflow(
+            exam: exam,
+            busy: _working,
+            onAnswerKey: _openAnswerKey,
+            onGenerate: _generateSheet,
+            onOpenSheet: _openSheet,
+          ),
 
           const SizedBox(height: 20),
           SectionHeader(
@@ -287,53 +365,183 @@ class _Fact extends StatelessWidget {
   }
 }
 
-class _Blocked extends StatelessWidget {
-  const _Blocked({required this.reason});
+/// The three steps between a new exam and a scannable one.
+///
+/// Each row states where the exam actually stands and, when it is the step in
+/// hand, carries the button that advances it. The old version of this only
+/// explained that the work had to happen on the web app.
+class _Workflow extends StatelessWidget {
+  const _Workflow({
+    required this.exam,
+    required this.busy,
+    required this.onAnswerKey,
+    required this.onGenerate,
+    required this.onOpenSheet,
+  });
 
-  final String reason;
+  final Exam exam;
+  final bool busy;
+  final VoidCallback onAnswerKey;
+  final VoidCallback onGenerate;
+  final VoidCallback onOpenSheet;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Signal.warnSoft,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Signal.warn.withValues(alpha: 0.25)),
+    final hasQuestions = exam.totalQuestions > 0;
+    final confirmed = exam.answerKeyConfirmed;
+    final hasSheet = exam.hasAnswerSheet;
+
+    return AppCard(
+      sealed: !exam.canScan,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Eyebrow(exam.canScan ? 'Ready to scan' : 'To start scanning'),
+          const SizedBox(height: 14),
+
+          _Step(
+            done: hasQuestions,
+            title: 'Upload the exam PDF',
+            detail: hasQuestions
+                ? '${exam.totalQuestions} ${plural(exam.totalQuestions, "item")} read from the paper'
+                : 'CheckWise reads the questions and the key out of it',
+            action: hasQuestions ? null : ('Upload', onAnswerKey),
+          ),
+          _Step(
+            done: confirmed,
+            enabled: hasQuestions,
+            title: 'Confirm the answer key',
+            detail: confirmed
+                ? 'Signed off — nothing is graded against an unconfirmed key'
+                : 'Check what was read, then sign it off',
+            action: hasQuestions && !confirmed ? ('Review', onAnswerKey) : null,
+          ),
+          _Step(
+            done: hasSheet,
+            enabled: confirmed,
+            last: true,
+            title: 'Generate the answer sheet',
+            detail: hasSheet
+                ? 'Print it, hand it out, then scan the completed papers'
+                : 'Bubbles, writing lines and the corner markers the scanner needs',
+            action: !confirmed
+                ? null
+                : hasSheet
+                    ? ('Open PDF', onOpenSheet)
+                    : ('Generate', onGenerate),
+            busy: busy,
+          ),
+
+          if (hasQuestions && confirmed) ...[
+            const SizedBox(height: 4),
+            TextButton.icon(
+              onPressed: onAnswerKey,
+              icon: const Icon(Icons.tune_rounded, size: 16),
+              label: const Text('Edit the answer key'),
+            ),
+          ],
+        ],
       ),
+    );
+  }
+}
+
+class _Step extends StatelessWidget {
+  const _Step({
+    required this.done,
+    required this.title,
+    required this.detail,
+    this.action,
+    this.enabled = true,
+    this.last = false,
+    this.busy = false,
+  });
+
+  final bool done;
+  final bool enabled;
+  final bool last;
+  final bool busy;
+  final String title;
+  final String detail;
+
+  /// Label and callback for the button that advances this step, when it is the
+  /// one in hand.
+  final (String, VoidCallback)? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = !enabled && !done;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: last ? 0 : 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline_rounded, size: 19, color: Signal.warn),
-          const SizedBox(width: 11),
+          Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              color: done ? Signal.passSoft : (muted ? Slate.c50 : Brand.c50),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: done ? Signal.passLine : (muted ? Slate.c200 : Brand.c200),
+              ),
+            ),
+            child: done
+                ? const Icon(Icons.check_rounded, size: 13, color: Signal.pass)
+                : null,
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Not ready to scan',
+                Text(
+                  title,
                   style: TextStyle(
                     fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF92400E),
+                    fontWeight: FontWeight.w600,
+                    color: muted ? Slate.c400 : Slate.c800,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
-                  reason,
-                  style: const TextStyle(
+                  detail,
+                  style: TextStyle(
                     fontSize: 12.5,
-                    color: Color(0xFF92400E),
-                    height: 1.45,
+                    height: 1.4,
+                    color: muted ? Slate.c400 : Slate.c500,
                   ),
                 ),
               ],
             ),
           ),
+          if (action != null) ...[
+            const SizedBox(width: 10),
+            busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2.2),
+                  )
+                : FilledButton(
+                    onPressed: action!.$2,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(0, 34),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      textStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    child: Text(action!.$1),
+                  ),
+          ],
         ],
       ),
     );
   }
+
 }
 
 /// One scored paper, shared by the exam screen and the results tab.

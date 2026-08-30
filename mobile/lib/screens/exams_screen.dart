@@ -10,6 +10,7 @@ import '../models/exam.dart';
 import '../services/services.dart';
 import '../widgets/common.dart';
 import 'exam_detail_screen.dart';
+import 'exam_form_screen.dart';
 
 /// The teacher's exams, searchable and filterable, paged as you scroll.
 class ExamsScreen extends StatefulWidget {
@@ -154,11 +155,32 @@ class _ExamsScreenState extends State<ExamsScreen> {
           ),
         ),
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _create,
+        icon: const Icon(Icons.add_rounded, size: 20),
+        label: const Text(
+          'New exam',
+          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5),
+        ),
+      ),
       body: RefreshIndicator(
         onRefresh: () => _load(),
         child: _buildBody(),
       ),
     );
+  }
+
+  /// Straight from the form into the new exam, so the next step — uploading
+  /// the PDF — is one tap away rather than back through the list.
+  Future<void> _create() async {
+    final exam = await Navigator.of(context).push<Exam>(
+      MaterialPageRoute(builder: (_) => const ExamFormScreen()),
+    );
+    if (exam == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ExamDetailScreen(examId: exam.id)),
+    );
+    if (mounted) await _load();
   }
 
   Widget _filter(String value, String label) {
@@ -218,8 +240,8 @@ class _ExamsScreenState extends State<ExamsScreen> {
               title: filtered ? 'No exams match' : 'No exams yet',
               message: filtered
                   ? 'Try a different search or filter.'
-                  : 'Create your exams on the CheckWise web app, then come '
-                        'back here to scan the papers.',
+                  : 'Create one, upload its PDF, and CheckWise will build the '
+                        'answer sheet for you.',
             ),
           ),
         ],
@@ -228,7 +250,7 @@ class _ExamsScreenState extends State<ExamsScreen> {
 
     return ListView.separated(
       controller: _scroll,
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 88),
       itemCount: _exams.length + (_pagination.hasNext ? 1 : 0),
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {

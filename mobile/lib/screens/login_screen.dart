@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/api_client.dart';
-import '../core/api_config.dart';
 import '../core/theme.dart';
 import '../main.dart' show BrandMark;
 import '../state/auth_controller.dart';
-import 'server_screen.dart';
 
 /// Sign in, or register a teacher account.
 ///
@@ -122,10 +120,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    // The brass rule from the splash, repeated at the front
+                    // The short rule from the splash, repeated at the front
                     // door so the two entrances match.
                     Center(
-                      child: Container(width: 34, height: 2, color: Accent.c500),
+                      child: Container(width: 34, height: 2, color: Brand.c500),
                     ),
                     const SizedBox(height: 12),
                     Center(
@@ -239,76 +237,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-
-                    const SizedBox(height: 8),
-                    const Divider(),
-                    const SizedBox(height: 8),
-
-                    // The address is the single most common reason a fresh
-                    // install cannot sign in, so it is reachable from here
-                    // rather than only from inside the app.
-                    _ServerRow(
-                      onChanged: () => setState(() {}),
-                    ),
                   ],
                 ),
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ServerRow extends StatelessWidget {
-  const _ServerRow({required this.onChanged});
-
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () async {
-        await Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const ServerScreen()),
-        );
-        onChanged();
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-        child: Row(
-          children: [
-            const Icon(Icons.dns_outlined, size: 17, color: Slate.c400),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'CheckWise server',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Slate.c500,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    ApiConfig.baseUrl,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: Slate.c700,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded, color: Slate.c400),
-          ],
         ),
       ),
     );

@@ -7,10 +7,9 @@ import 'settings_screen.dart';
 
 /// The four places a teacher goes on a phone.
 ///
-/// Deliberately fewer than the web sidebar: writing an exam, uploading its PDF
-/// and reviewing a parsed answer key are desk work, and the phone's reason to
-/// exist is the camera. Those live on the web app and are linked to from
-/// Settings rather than half-built here.
+/// The app carries the whole workflow now — writing an exam, uploading its PDF,
+/// confirming the key, generating the sheet and scanning the papers all happen
+/// here rather than being split with the web client.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
