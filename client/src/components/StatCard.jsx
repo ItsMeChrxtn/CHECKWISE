@@ -18,7 +18,7 @@ const TONES = {
  */
 export default function StatCard({ icon: Icon, label, value, sublabel, tone = "brand", loading }) {
   return (
-    <div className="card p-5">
+    <div className="card p-4 sm:p-5">
       <div className="flex items-center gap-2">
         {Icon && (
           <Icon size={14} aria-hidden="true" className={cn("shrink-0", TONES[tone])} />
@@ -29,7 +29,7 @@ export default function StatCard({ icon: Icon, label, value, sublabel, tone = "b
       {loading ? (
         <div className="mt-3 h-9 w-24 animate-pulse rounded-sm bg-ink-100" />
       ) : (
-        <p className="figure mt-2.5 text-[32px] leading-none">{value}</p>
+        <p className="figure mt-2 text-[26px] leading-none sm:mt-2.5 sm:text-[32px]">{value}</p>
       )}
 
       {sublabel && !loading && (

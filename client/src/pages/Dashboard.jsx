@@ -74,7 +74,7 @@ export default function Dashboard() {
         </p>
       </header>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatCard icon={ClipboardList} label="Total Exams" value={summary.totalExams} tone="brand" />
         <StatCard
           icon={FileCheck2}
@@ -93,7 +93,7 @@ export default function Dashboard() {
       </div>
 
       {isAdmin && system && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
           <StatCard icon={Users} label="Total Users" value={system.totalUsers} tone="brand" />
           <StatCard icon={Users} label="Teachers" value={system.totalTeachers} tone="sky" />
           <StatCard icon={Users} label="Administrators" value={system.totalAdmins} tone="amber" />
@@ -105,7 +105,7 @@ export default function Dashboard() {
           title="Answer sheets checked"
           description="Papers processed over the last 7 days"
         >
-          <div className="h-64">
+          <div className="h-52 sm:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart
                 data={charts.checkedOverTime}
@@ -141,7 +141,7 @@ export default function Dashboard() {
 
         <ChartCard title="Score distribution" description="How results are spread across bands">
           {hasResults ? (
-            <div className="h-64">
+            <div className="h-52 sm:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={charts.distribution}

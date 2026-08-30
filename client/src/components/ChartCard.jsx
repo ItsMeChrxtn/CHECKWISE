@@ -53,7 +53,7 @@ export function CategoryTick({ x, y, payload, max = 22 }) {
 
 export function ChartCard({ title, description, action, children, footer }) {
   return (
-    <section className="card flex flex-col p-5">
+    <section className="card flex flex-col p-4 sm:p-5">
       <div className="mb-5 flex items-start justify-between gap-3 border-b border-ink-200 pb-3">
         <div>
           <h2 className="text-[15px] font-semibold text-ink-900">{title}</h2>
