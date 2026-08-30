@@ -52,10 +52,22 @@ class ApiClient {
 
   static const tokenKey = 'checkwise.token';
 
+  /*
+   * Timeouts sized for a free-tier host rather than a local server.
+   *
+   * A sleeping instance accepts the TCP connection almost immediately and then
+   * takes the better part of a minute to produce the first byte while it boots,
+   * so the receive budget is the one that has to be generous — a short one
+   * turns an ordinary cold start into "the request timed out" even though the
+   * server is on its way up.
+   *
+   * Measured against the deployed API: ~4.7s warm for a plain read, ~6.8s for
+   * sign-in (bcrypt on a small instance), and roughly a minute from cold.
+   */
   final Dio _dio = Dio(
     BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 30),
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 90),
       contentType: Headers.jsonContentType,
     ),
   );
@@ -194,11 +206,17 @@ class ApiClient {
         'Cannot reach the CheckWise server at ${ApiConfig.baseUrl}. Check that '
         'it is running, and that the address in Settings is right.';
 
+    // A timeout on a free-tier host usually means it was asleep, not broken.
+    // Saying so turns a dead end into "wait and press it again".
+    const timedOut =
+        'The server took too long to answer. If it has been idle a while it is '
+        'probably starting up — give it a minute and try again.';
+
     final message = switch (error.type) {
       DioExceptionType.connectionTimeout ||
       DioExceptionType.sendTimeout ||
       DioExceptionType.receiveTimeout =>
-        serverMessage ?? 'The request timed out. Please try again.',
+        serverMessage ?? timedOut,
       DioExceptionType.connectionError ||
       DioExceptionType.unknown =>
         serverMessage ?? unreachable,

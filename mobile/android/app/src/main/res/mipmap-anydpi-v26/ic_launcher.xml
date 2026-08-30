@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The adaptive icon, Android 8+.
+
+  Without this file the launcher falls back to the legacy mipmap-*/ic_launcher.png
+  and masks that square artwork into whatever shape it uses — which left the
+  icon as a small blue tile floating inside a white circle.
+
+  Splitting it into a flat background and a transparent glyph lets the launcher
+  mask, parallax and animate the icon the way it does every other one.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>
