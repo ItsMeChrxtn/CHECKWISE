@@ -23,6 +23,17 @@ export const resultService = {
     return data;
   },
 
+  /**
+   * Every paper the caller may see, newest first.
+   *
+   * The server decides the scope from the role — a teacher's own, or all of
+   * them for an administrator — so there is nothing to pass here.
+   */
+  async listAll(limit = 50) {
+    const { data } = await api.get("/results", { params: { limit } });
+    return data.data.results;
+  },
+
   async listForExam(examId) {
     const { data } = await api.get(`/exams/${examId}/results`);
     return data.data;

@@ -12,7 +12,9 @@ import Dashboard from "./pages/Dashboard.jsx";
 import Exams from "./pages/Exams.jsx";
 import ExamForm from "./pages/ExamForm.jsx";
 import ExamDetails from "./pages/ExamDetails.jsx";
+import Results from "./pages/Results.jsx";
 import Settings from "./pages/Settings.jsx";
+import Users from "./pages/Users.jsx";
 import NotFound from "./pages/NotFound.jsx";
 import PhasePlaceholder from "./pages/PhasePlaceholder.jsx";
 
@@ -47,33 +49,11 @@ const UPCOMING = [
     ],
   },
   {
-    path: "/results",
-    title: "Results",
-    phase: 7,
-    description: "Automatically graded results with search, filters and review.",
-    bullets: [
-      "Question-by-question comparison against the answer key",
-      "Correct, wrong, blank, multiple and review-required tallies",
-      "Partial scoring for enumeration and modified true or false",
-    ],
-  },
-  {
     path: "/reports",
     title: "Reports",
     phase: 8,
     description: "Performance reporting and export.",
     bullets: ["Score distribution and pass rates", "Per-student performance", "CSV and Excel export"],
-  },
-  {
-    path: "/admin/users",
-    title: "User Management",
-    phase: "Not scheduled",
-    description:
-      "Administering teacher and administrator accounts is not part of the current eight-phase plan.",
-    bullets: [
-      "Admin accounts are provisioned from the server with npm run seed:admin",
-      "Teachers create their own accounts from the sign-up page",
-    ],
   },
 ];
 
@@ -94,6 +74,19 @@ const router = createBrowserRouter([
       },
     ],
   },
+  // Admin-only area. The server enforces this too; the guard here just avoids
+  // showing a teacher a page that would only answer 403.
+  {
+    element: <ProtectedRoute roles={["admin"]} />,
+    children: [
+      {
+        element: <DashboardLayout />,
+        children: [
+          { path: "/admin/users", element: <Users />, handle: { title: "Accounts" } },
+        ],
+      },
+    ],
+  },
   {
     element: <ProtectedRoute />,
     children: [
@@ -106,6 +99,8 @@ const router = createBrowserRouter([
           { path: "/exams/new", element: <ExamForm />, handle: { title: "Create Exam" } },
           { path: "/exams/:id", element: <ExamDetails />, handle: { title: "Exam Details" } },
           { path: "/exams/:id/edit", element: <ExamForm />, handle: { title: "Edit Exam" } },
+
+          { path: "/results", element: <Results />, handle: { title: "Results" } },
 
           { path: "/settings", element: <Settings />, handle: { title: "Settings" } },
 

@@ -47,7 +47,7 @@ const TEACHER_NAV = [
     section: "Checking",
     items: [
       { to: "/scanner", label: "OMR Scanner", icon: ScanLine, phase: 6 },
-      { to: "/results", label: "Results", icon: BarChart3, phase: 7 },
+      { to: "/results", label: "Results", icon: BarChart3 },
       { to: "/reports", label: "Reports", icon: BarChart3, phase: 8 },
     ],
   },
@@ -70,7 +70,7 @@ const ADMIN_NAV = [
     section: "Examinations",
     items: [
       { to: "/exams", label: "All Exams", icon: ClipboardList, match: EXAMS_MATCH },
-      { to: "/results", label: "All Results", icon: BarChart3, phase: 7 },
+      { to: "/results", label: "All Results", icon: BarChart3 },
     ],
   },
   {

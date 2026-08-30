@@ -277,6 +277,9 @@ export const listAllResults = asyncHandler(async (req, res) => {
     .limit(Math.min(100, Number(req.query.limit) || 25))
     .select("-answers")
     .populate("examId", "title subject examCode")
+    // Admins see every teacher's papers, so the list has to say whose each one
+    // is. A teacher only ever sees their own, where the name adds nothing.
+    .populate("teacherId", "name email")
     .lean();
 
   res.json({ success: true, data: { results } });
