@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -12,6 +13,8 @@ import {
   ShieldCheck,
   Smartphone,
   Download,
+  Menu,
+  X,
 } from "lucide-react";
 import Logo from "../components/Logo.jsx";
 import { useAuth } from "../hooks/useAuth.js";
@@ -119,34 +122,58 @@ export default function Landing() {
   );
 }
 
+/** The in-page sections the header links to. */
+const NAV_LINKS = [
+  { href: "#how-it-works", label: "How it works" },
+  { href: "#what-it-grades", label: "What it grades" },
+  { href: "#mobile-app", label: "Get the app" },
+];
+
+/**
+ * The public header.
+ *
+ * Below `sm` the section links used to be simply `hidden`, with nothing put in
+ * their place — so on a phone there was no way to reach any of them, including
+ * the app download. They collapse into a menu now instead of disappearing.
+ */
 function SiteHeader({ isAuthenticated }) {
+  const [open, setOpen] = useState(false);
+
+  // Escape closes it, and the page behind it should not scroll while it is up.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
+
+  const close = () => setOpen(false);
+
   return (
     <header className="sticky top-0 z-30 border-b border-ink-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
-        <Link to="/" aria-label="CheckWise home">
+        <Link to="/" aria-label="CheckWise home" onClick={close}>
           <Logo size="sm" />
         </Link>
 
-        <nav className="flex items-center gap-2 sm:gap-6">
-          <a
-            href="#how-it-works"
-            className="hidden text-sm font-medium text-ink-600 hover:text-brand-700 sm:block"
-          >
-            How it works
-          </a>
-          <a
-            href="#what-it-grades"
-            className="hidden text-sm font-medium text-ink-600 hover:text-brand-700 sm:block"
-          >
-            What it grades
-          </a>
-          <a
-            href="#mobile-app"
-            className="hidden text-sm font-medium text-ink-600 hover:text-brand-700 sm:block"
-          >
-            Get the app
-          </a>
-
+        {/* Full-width nav, from sm up. */}
+        <nav className="hidden items-center gap-6 sm:flex">
+          {NAV_LINKS.map(({ href, label }) => (
+            <a
+              key={href}
+              href={href}
+              className="text-sm font-medium text-ink-600 hover:text-brand-700"
+            >
+              {label}
+            </a>
+          ))}
           {isAuthenticated ? (
             <Link
               to="/dashboard"
@@ -157,10 +184,7 @@ function SiteHeader({ isAuthenticated }) {
             </Link>
           ) : (
             <>
-              <Link
-                to="/login"
-                className="text-sm font-semibold text-ink-700 hover:text-brand-700"
-              >
+              <Link to="/login" className="text-sm font-semibold text-ink-700 hover:text-brand-700">
                 Sign in
               </Link>
               <Link
@@ -172,7 +196,69 @@ function SiteHeader({ isAuthenticated }) {
             </>
           )}
         </nav>
+
+        {/* Below sm the whole nav lives behind this one control. */}
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls="site-menu"
+          aria-label={open ? "Close menu" : "Open menu"}
+          className="-mr-2 grid h-10 w-10 place-items-center rounded-lg text-ink-700 hover:bg-ink-100 sm:hidden"
+        >
+          {open ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
+        </button>
       </div>
+
+      {open && (
+        <div id="site-menu" className="border-t border-ink-200 bg-white sm:hidden">
+          <nav className="mx-auto max-w-6xl px-5 py-3">
+            <ul className="ruled">
+              {NAV_LINKS.map(({ href, label }) => (
+                <li key={href}>
+                  <a
+                    href={href}
+                    onClick={close}
+                    className="block py-3 text-[15px] font-medium text-ink-700"
+                  >
+                    {label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-4 flex flex-col gap-2.5 pb-2">
+              {isAuthenticated ? (
+                <Link
+                  to="/dashboard"
+                  onClick={close}
+                  className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-4 text-sm font-semibold text-white"
+                >
+                  Go to dashboard
+                  <ArrowRight size={15} aria-hidden="true" />
+                </Link>
+              ) : (
+                <>
+                  <Link
+                    to="/register"
+                    onClick={close}
+                    className="inline-flex h-11 items-center justify-center rounded-lg bg-brand-600 px-4 text-sm font-semibold text-white"
+                  >
+                    Create account
+                  </Link>
+                  <Link
+                    to="/login"
+                    onClick={close}
+                    className="inline-flex h-11 items-center justify-center rounded-lg border border-ink-300 px-4 text-sm font-semibold text-ink-700"
+                  >
+                    Sign in
+                  </Link>
+                </>
+              )}
+            </div>
+          </nav>
+        </div>
+      )}
     </header>
   );
 }
