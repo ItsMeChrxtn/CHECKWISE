@@ -78,7 +78,7 @@ export default function Dashboard() {
         <StatCard icon={ClipboardList} label="Total Exams" value={summary.totalExams} tone="brand" />
         <StatCard
           icon={FileCheck2}
-          label="Answer Sheets Checked"
+          label="Sheets Checked"
           value={summary.totalChecked}
           tone="sky"
         />
