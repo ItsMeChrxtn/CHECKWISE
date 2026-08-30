@@ -334,12 +334,42 @@ function toQuestion(block, section, warnings) {
   return question;
 }
 
+/**
+ * Decides what one item actually is.
+ *
+ * The section heading is a default, not a verdict. Teachers mix types inside a
+ * section all the time — a paper that says MULTIPLE CHOICE but slips a True or
+ * False in at item 12 is ordinary, and forcing every item to the heading's type
+ * used to mis-grade the odd ones out.
+ *
+ * So an item overrides its section when its own shape says so unambiguously,
+ * and only then. Everything else keeps the heading's type, and whatever this
+ * lands on is shown per item on the review screen before anything is graded.
+ */
 function resolveType(sectionType, block, questionText) {
-  if (sectionType && QUESTION_TYPES.includes(sectionType)) return sectionType;
-
-  if (block.choices.length >= 2) return "multiple-choice";
+  const declared = sectionType && QUESTION_TYPES.includes(sectionType) ? sectionType : null;
   const written = block.prefixAnswer || block.inlineAnswer || block.highlightedText;
-  if (written && (TRUE_WORDS.test(written) || FALSE_WORDS.test(written))) return "true-false";
+
+  // Lettered options are structural — a line reading "B. Updating" is not
+  // something a True or False item produces by accident.
+  if (block.choices.length >= 2) return "multiple-choice";
+
+  if (written) {
+    // "FALSE - Babel": a truth value carrying a correction is Modified True or
+    // False wherever it appears.
+    const [head, ...rest] = written.split(/\s*[-,;:]\s*|\s{2,}/);
+    const isTruth = TRUE_WORDS.test(head) || FALSE_WORDS.test(head);
+
+    if (isTruth && rest.join(" ").trim()) return "modified-true-false";
+
+    // A bare TRUE or FALSE is a True or False item — unless the section is
+    // Modified True or False, where a TRUE item legitimately has nothing after
+    // it and demoting it would drop the correction field.
+    if (isTruth && declared !== "modified-true-false") return "true-false";
+  }
+
+  if (declared) return declared;
+
   if (/_{3,}/.test(questionText)) return "fill-in-the-blanks";
   return "identification";
 }

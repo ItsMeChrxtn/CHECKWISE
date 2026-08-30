@@ -67,6 +67,31 @@ const RULES = [
     examples: ["ReactJS / React", "ReactJS (React)", "ReactJS or React"],
   },
   {
+    title: "Mixing types in one section",
+    body:
+      "The heading is a starting point, not a rule. An item that carries lettered options is " +
+      "read as multiple choice, and one answered TRUE or FALSE is read as such, wherever they " +
+      "sit — so a section can hold a mix:",
+    examples: [
+      "GENERAL QUIZ",
+      "",
+      "1. Which hook manages local state?",
+      "   A. useEffect      C. useMemo",
+      "   B. useState       D. useRef",
+      "   ANSWER: B",
+      "",
+      "2. React keeps a virtual DOM in memory.",
+      "   ANSWER: TRUE",
+      "",
+      "3. JSX is compiled by Webpack.",
+      "   ANSWER: FALSE - Babel",
+    ],
+    note:
+      "Enumeration is the one type that still needs its section named — a comma-separated " +
+      "answer is not enough on its own to tell it apart from an identification. Every item's " +
+      "type is shown on the review screen, and you can change any of them there.",
+  },
+  {
     title: "Setting the marks per item",
     body: "Put the count and the points in the section heading:",
     examples: ["TEST I: MULTIPLE CHOICE (40 items, 1 point each)"],
@@ -94,7 +119,7 @@ export default function FormatGuide({ defaultOpen = false }) {
             How to write your exam PDF
           </span>
           <span className="block text-xs text-ink-500">
-            Seven rules and a worked sample of every question type. Same for a short quiz or a
+            Eight rules and a worked sample of every question type. Same for a short quiz or a
             long final.
           </span>
         </span>

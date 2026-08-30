@@ -132,6 +132,34 @@ class _FormatGuideState extends State<FormatGuide> {
 
         const _Rule(
           n: '7',
+          title: 'Mixing types in one section',
+          body:
+              'The heading is a starting point, not a rule. An item with lettered '
+              'options is read as multiple choice, and one answered TRUE or FALSE '
+              'is read as such, wherever they sit:',
+          examples: [
+            'GENERAL QUIZ',
+            '',
+            '1. Which hook manages local state?',
+            '   A. useEffect     C. useMemo',
+            '   B. useState      D. useRef',
+            '   ANSWER: B',
+            '',
+            '2. React keeps a virtual DOM.',
+            '   ANSWER: TRUE',
+            '',
+            '3. JSX is compiled by Webpack.',
+            '   ANSWER: FALSE - Babel',
+          ],
+          note:
+              'Enumeration still needs its section named — a comma-separated '
+              'answer cannot be told from an identification on its own. Every '
+              'item shows its type on the review screen, and you can change it '
+              'there.',
+        ),
+
+        const _Rule(
+          n: '8',
           title: 'Setting the marks per item',
           body: 'Put the count and the points in the section heading:',
           examples: ['TEST I: MULTIPLE CHOICE (40 items, 1 point each)'],
