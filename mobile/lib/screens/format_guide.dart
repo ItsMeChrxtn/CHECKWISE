@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/format_samples.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
 
@@ -28,15 +29,27 @@ void showFormatGuide(BuildContext context) {
   );
 }
 
-class FormatGuide extends StatelessWidget {
+class FormatGuide extends StatefulWidget {
   const FormatGuide({super.key, this.scrollController});
 
   final ScrollController? scrollController;
 
   @override
+  State<FormatGuide> createState() => _FormatGuideState();
+}
+
+class _FormatGuideState extends State<FormatGuide> {
+  String _sampleType = formatSamples.first.type;
+
+  @override
   Widget build(BuildContext context) {
+    final sample = formatSamples.firstWhere(
+      (s) => s.type == _sampleType,
+      orElse: () => formatSamples.first,
+    );
+
     return ListView(
-      controller: scrollController,
+      controller: widget.scrollController,
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
       children: [
         Text('How to write your exam PDF', style: Type.heading(size: 20, weight: FontWeight.w700)),
@@ -126,7 +139,93 @@ class FormatGuide extends StatelessWidget {
           last: true,
         ),
 
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
+        Text('A sample of each type', style: Type.heading(size: 17)),
+        const SizedBox(height: 4),
+        const Text(
+          'Whole sections, written the way CheckWise reads them. Pick the type '
+          'you are setting.',
+          style: TextStyle(fontSize: 13, color: Slate.c600, height: 1.5),
+        ),
+        const SizedBox(height: 12),
+
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: formatSamples.map((entry) {
+            final selected = entry.type == _sampleType;
+            return ChoiceChip(
+              label: Text(entry.label),
+              selected: selected,
+              showCheckmark: false,
+              labelStyle: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: selected ? Brand.c700 : Slate.c600,
+              ),
+              backgroundColor: Colors.white,
+              selectedColor: Brand.c50,
+              side: BorderSide(color: selected ? Brand.c300 : Slate.c200),
+              onSelected: (_) => setState(() => _sampleType = entry.type),
+            );
+          }).toList(),
+        ),
+
+        const SizedBox(height: 12),
+        Text(
+          sample.blurb,
+          style: const TextStyle(fontSize: 12.5, color: Slate.c500, height: 1.45),
+        ),
+        const SizedBox(height: 10),
+
+        // The sample is preformatted, so it scrolls sideways rather than
+        // wrapping — a rewrapped code listing stops being an example.
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Slate.c50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Slate.c200),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              sample.sample.trim(),
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 11.5,
+                height: 1.55,
+                color: Slate.c800,
+              ),
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 10),
+        ...sample.notes.map(
+          (note) => Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('·  ', style: TextStyle(color: Slate.c300)),
+                Expanded(
+                  child: Text(
+                    note,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Slate.c500,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
         AppCard(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,

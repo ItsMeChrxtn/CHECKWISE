@@ -172,6 +172,12 @@ function splitIntoSections(lines) {
     const heading = readHeading(line.text);
     if (heading) {
       open(heading.label, heading.type);
+      // "TEST IV: IDENTIFICATION (10 items, 2 points each)" — the heading is
+      // where teachers actually write this, so read it here as well as from a
+      // directions line. Opening the section and moving on skipped it, and the
+      // section silently kept the default of one mark per item.
+      const hint = line.text.match(ITEM_COUNT_HINT);
+      if (hint) current.points = Number(hint[2]) || 1;
       continue;
     }
 

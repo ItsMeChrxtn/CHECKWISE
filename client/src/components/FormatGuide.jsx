@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, ListChecks } from "lucide-react";
+import { FORMAT_SAMPLES } from "../config/formatSamples.js";
 
 /**
  * How an exam PDF has to be written for CheckWise to read it.
@@ -75,6 +76,9 @@ const RULES = [
 
 export default function FormatGuide({ defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
+  const [sampleType, setSampleType] = useState(FORMAT_SAMPLES[0].type);
+
+  const sample = FORMAT_SAMPLES.find((s) => s.type === sampleType) ?? FORMAT_SAMPLES[0];
 
   return (
     <section className="rounded-lg border border-ink-200 bg-white">
@@ -90,8 +94,8 @@ export default function FormatGuide({ defaultOpen = false }) {
             How to write your exam PDF
           </span>
           <span className="block text-xs text-ink-500">
-            Seven rules — numbering, section headings, and how to mark the answer. Same for a
-            short quiz or a long final.
+            Seven rules and a worked sample of every question type. Same for a short quiz or a
+            long final.
           </span>
         </span>
         <ChevronDown
@@ -122,6 +126,50 @@ export default function FormatGuide({ defaultOpen = false }) {
               </div>
             </li>
           ))}
+
+          <li className="px-4 py-4">
+            <p className="text-sm font-semibold text-ink-900">A sample of each type</p>
+            <p className="mt-1 text-sm leading-relaxed text-ink-600">
+              Whole sections, written the way CheckWise reads them. Pick the type you are
+              setting.
+            </p>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {FORMAT_SAMPLES.map((entry) => {
+                const selected = entry.type === sampleType;
+                return (
+                  <button
+                    key={entry.type}
+                    type="button"
+                    onClick={() => setSampleType(entry.type)}
+                    aria-pressed={selected}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      selected
+                        ? "border-brand-300 bg-brand-50 text-brand-700"
+                        : "border-ink-200 bg-white text-ink-600 hover:border-ink-300"
+                    }`}
+                  >
+                    {entry.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="mt-3 text-xs leading-relaxed text-ink-500">{sample.blurb}</p>
+
+            <pre className="mt-2 overflow-x-auto rounded-md border border-ink-200 bg-ink-50 px-3 py-3 font-mono text-xs leading-relaxed text-ink-800">
+              {sample.sample}
+            </pre>
+
+            <ul className="mt-3 space-y-1.5">
+              {sample.notes.map((note) => (
+                <li key={note} className="flex gap-2 text-xs leading-relaxed text-ink-500">
+                  <span aria-hidden="true" className="text-ink-300">·</span>
+                  <span>{note}</span>
+                </li>
+              ))}
+            </ul>
+          </li>
 
           <li className="bg-ink-50 px-4 py-3.5">
             <p className="text-xs leading-relaxed text-ink-600">
