@@ -6,8 +6,13 @@ import {
   FileUp,
   RefreshCw,
   TriangleAlert,
+  Pencil,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import Button from "./Button.jsx";
+import QuestionEditor from "./QuestionEditor.jsx";
+import FormatGuide from "./FormatGuide.jsx";
 import { examService } from "../services/examService.js";
 import { useToast } from "../hooks/useToast.js";
 import { questionTypeLabel } from "../config/questionTypes.js";
@@ -30,6 +35,52 @@ export default function ExamDocumentPanel({ exam, onChange }) {
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState("");
   const [report, setReport] = useState(null);
+
+  /// null = closed, { question, index } = open on that item, {} = adding.
+  const [editing, setEditing] = useState(null);
+  const [savingQuestions, setSavingQuestions] = useState(false);
+
+  /**
+   * Item and section numbers are derived, never typed: questionNumber is the
+   * position in the exam and sectionNumber the position within its section,
+   * which is the number actually printed on the paper.
+   */
+  function renumber(list) {
+    const perSection = new Map();
+    return list.map((question, index) => {
+      const n = (perSection.get(question.section) ?? 0) + 1;
+      perSection.set(question.section, n);
+      return { ...question, questionNumber: index + 1, sectionNumber: n };
+    });
+  }
+
+  async function persist(questions) {
+    setSavingQuestions(true);
+    try {
+      const response = await examService.saveQuestions(exam._id, renumber(questions));
+      onChange(response.data.exam);
+      toast.success("Answer key saved.");
+      setEditing(null);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSavingQuestions(false);
+    }
+  }
+
+  function saveQuestion(built) {
+    const next = [...exam.questions];
+    if (editing?.index != null) next[editing.index] = { ...next[editing.index], ...built };
+    else next.push(built);
+    persist(next);
+  }
+
+  function deleteQuestion(index) {
+    const question = exam.questions[index];
+    const label = question.sectionNumber ?? question.questionNumber;
+    if (!window.confirm(`Delete item ${label}? The question and its answer are removed.`)) return;
+    persist(exam.questions.filter((_, i) => i !== index));
+  }
 
   async function upload(file) {
     if (!file) return;
@@ -185,6 +236,8 @@ export default function ExamDocumentPanel({ exam, onChange }) {
           onChange={(e) => upload(e.target.files?.[0])}
         />
 
+        <FormatGuide defaultOpen={exam.questions.length === 0} />
+
         {report?.warnings?.length > 0 && (
           <div className="rounded-lg border border-warn-100 bg-warn-50 p-4">
             <p className="flex items-center gap-2 text-sm font-semibold text-warn-700">
@@ -200,6 +253,28 @@ export default function ExamDocumentPanel({ exam, onChange }) {
           </div>
         )}
 
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-ink-900">
+              {exam.questions.length > 0
+                ? `${exam.questions.length} question${exam.questions.length === 1 ? "" : "s"}`
+                : "No questions yet"}
+            </p>
+            <p className="mt-0.5 text-xs text-ink-500">
+              Upload a PDF above, or write them here one at a time.
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={savingQuestions}
+            onClick={() => setEditing({})}
+          >
+            <Plus size={15} aria-hidden="true" />
+            Add question
+          </Button>
+        </div>
+
         {exam.questions.length > 0 && (
           <div className="overflow-hidden rounded-lg border border-ink-200">
             <table className="w-full text-left text-sm">
@@ -209,6 +284,7 @@ export default function ExamDocumentPanel({ exam, onChange }) {
                   <th className="px-3 py-2 font-semibold">Question</th>
                   <th className="w-44 px-3 py-2 font-semibold">Type</th>
                   <th className="w-40 px-3 py-2 font-semibold">Answer</th>
+                  <th className="w-24 px-3 py-2 text-right font-semibold">Edit</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
@@ -219,7 +295,7 @@ export default function ExamDocumentPanel({ exam, onChange }) {
                       question.section !== exam.questions[index - 1]?.section && (
                         <tr className="bg-ink-50">
                           <td
-                            colSpan={4}
+                            colSpan={5}
                             className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-ink-600"
                           >
                             {question.section}
@@ -239,6 +315,26 @@ export default function ExamDocumentPanel({ exam, onChange }) {
                     <td className="px-3 py-2 font-medium text-ink-800">
                       {formatAnswer(question)}
                     </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          aria-label={`Edit item ${question.sectionNumber ?? question.questionNumber}`}
+                          onClick={() => setEditing({ question, index })}
+                          className="rounded-md p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete item ${question.sectionNumber ?? question.questionNumber}`}
+                          onClick={() => deleteQuestion(index)}
+                          className="rounded-md p-1.5 text-ink-400 hover:bg-fail-50 hover:text-fail-600"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
                     </tr>
                   </Fragment>
                 ))}
@@ -247,6 +343,15 @@ export default function ExamDocumentPanel({ exam, onChange }) {
           </div>
         )}
       </div>
+
+      <QuestionEditor
+        open={editing !== null}
+        question={editing?.question}
+        defaultSection={exam.questions.at(-1)?.section ?? ""}
+        defaultType={exam.questions.at(-1)?.questionType ?? "multiple-choice"}
+        onCancel={() => setEditing(null)}
+        onSave={saveQuestion}
+      />
     </section>
   );
 }

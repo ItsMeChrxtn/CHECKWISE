@@ -380,3 +380,81 @@ class ParsedSection {
   final String type;
   final int questions;
 }
+
+/// Account administration. Admin-only on the server, so a teacher reaching
+/// these gets a 403 rather than a filtered list — the client is never the thing
+/// keeping them out.
+class UserService {
+  UserService(this._api);
+
+  final ApiClient _api;
+
+  Future<({List<AdminUser> users, int all, int admins, int teachers})> list({
+    String? q,
+    String role = 'all',
+  }) async {
+    final body = await _api.get('/users', query: {'q': q, 'role': role});
+    final data = _data(body);
+    final totals = (data['totals'] as Map<String, dynamic>?) ?? const {};
+    final raw = data['users'];
+
+    return (
+      users: raw is List
+          ? raw.whereType<Map<String, dynamic>>().map(AdminUser.fromJson).toList()
+          : <AdminUser>[],
+      all: asInt(totals['all']),
+      admins: asInt(totals['admins']),
+      teachers: asInt(totals['teachers']),
+    );
+  }
+
+  Future<void> update(String id, Map<String, dynamic> changes) =>
+      _api.patch('/users/$id', body: changes);
+
+  Future<String> remove(String id) async {
+    final body = await _api.delete('/users/$id');
+    return (body['message'] ?? 'Account deleted.').toString();
+  }
+}
+
+/// A user as the admin roster sees them, with their workload attached.
+class AdminUser {
+  const AdminUser({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.role,
+    required this.isActive,
+    this.examCount = 0,
+    this.resultCount = 0,
+    this.createdAt,
+  });
+
+  factory AdminUser.fromJson(Map<String, dynamic> json) {
+    return AdminUser(
+      id: asId(json),
+      name: asString(json['name']),
+      email: asString(json['email']),
+      role: asString(json['role'], 'teacher'),
+      isActive: asBool(json['isActive'], true),
+      examCount: asInt(json['examCount']),
+      resultCount: asInt(json['resultCount']),
+      createdAt: asDate(json['createdAt']),
+    );
+  }
+
+  final String id;
+  final String name;
+  final String email;
+  final String role;
+  final bool isActive;
+  final int examCount;
+  final int resultCount;
+  final DateTime? createdAt;
+
+  bool get isAdmin => role == 'admin';
+
+  /// Deleting an account that still owns work would orphan a class's marks, so
+  /// the server refuses and the button is disabled before it is pressed.
+  bool get ownsWork => examCount > 0 || resultCount > 0;
+}

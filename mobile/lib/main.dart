@@ -31,6 +31,7 @@ Future<void> main() async {
         Provider<ExamService>(create: (_) => ExamService(api)),
         Provider<ResultService>(create: (_) => ResultService(api)),
         Provider<DashboardService>(create: (_) => DashboardService(api)),
+        Provider<UserService>(create: (_) => UserService(api)),
         ChangeNotifierProvider<AuthController>(
           create: (_) => AuthController(api, AuthService(api))..restore(),
         ),

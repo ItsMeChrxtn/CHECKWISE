@@ -34,6 +34,12 @@ export const QUESTION_TYPE_SHORT_LABELS = {
   enumeration: "Enumeration",
 };
 
+/** Ready-made `<Select>` options, in the order the types are declared. */
+export const QUESTION_TYPE_OPTIONS = QUESTION_TYPES.map((value) => ({
+  value,
+  label: QUESTION_TYPE_LABELS[value],
+}));
+
 /** Types answered by shading a bubble, so they can be read by the OMR scanner. */
 export const OMR_TYPES = ["multiple-choice", "true-false", "modified-true-false"];
 
