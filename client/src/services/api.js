@@ -2,24 +2,49 @@ import axios from "axios";
 
 export const TOKEN_KEY = "checkwise.token";
 
+/**
+ * Where the API lives, normalised so every reasonable spelling works.
+ *
+ * `VITE_API_URL` is set by hand in a hosting dashboard, and the two ways to get
+ * it wrong both fail confusingly: a trailing slash, or a missing `/api`, turn
+ * every request into `…/auth/login` and the server answers "Route not found"
+ * rather than anything that hints at the cause. So rather than trusting the
+ * value, it is trimmed and given the `/api` suffix if it lacks one. All of
+ * these end up identical:
+ *
+ *   https://api.example.com        https://api.example.com/
+ *   https://api.example.com/api    https://api.example.com/api/
+ *
+ * Left unset it stays a relative `/api`, which is the preferred setup: the Vite
+ * dev server proxies it in development, and netlify.toml forwards it to the API
+ * host in production. That keeps the browser on one origin, so CORS never
+ * enters into it.
+ */
+function resolveApiBase() {
+  const raw = (import.meta.env.VITE_API_URL || "").trim();
+  if (!raw) return "/api";
+
+  const trimmed = raw.replace(/\/+$/, "");
+  return /\/api$/.test(trimmed) ? trimmed : `${trimmed}/api`;
+}
+
+const API_BASE = resolveApiBase();
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "/api",
+  baseURL: API_BASE,
   headers: { "Content-Type": "application/json" },
   timeout: 30000,
 });
 
 /**
- * Where the server itself lives, with the `/api` suffix stripped off.
+ * The server's origin, with the `/api` suffix removed.
  *
- * Empty during development, because the Vite dev server proxies both `/api`
- * and `/uploads` to localhost:5000 and a relative path already works.
- *
- * In a deployed build there is no proxy: the site is on one host and the API
- * on another, so anything the server serves outside `/api` — the scan images
- * under `/uploads` — has to be addressed absolutely or it 404s against the
- * static host.
+ * Empty when the API is same-origin, so `/uploads/...` stays relative and is
+ * proxied. Absolute when pointed at another host, because anything the server
+ * serves outside `/api` — the scan images — would otherwise be requested from
+ * the static host, which does not have them.
  */
-export const API_ORIGIN = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
+export const API_ORIGIN = API_BASE.replace(/\/api$/, "");
 
 /** Resolves a server-relative file path (`/uploads/...`) for the current host. */
 export function fileUrl(path) {
