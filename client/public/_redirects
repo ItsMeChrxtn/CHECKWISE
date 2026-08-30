@@ -1,8 +1,0 @@
-# Netlify SPA fallback.
-#
-# CheckWise routes on the client (/login, /dashboard, /exams/:id …), so a hard
-# refresh on any of those asks Netlify for a file that does not exist. This
-# hands every unmatched path to index.html and lets the router sort it out.
-#
-# Real files still win: /checkwise.apk is served as the APK, not rewritten.
-/*  /index.html  200
