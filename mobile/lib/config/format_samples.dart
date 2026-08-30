@@ -26,6 +26,41 @@ class FormatSample {
 
 const formatSamples = <FormatSample>[
   FormatSample(
+    type: 'plain-quiz',
+    label: 'Plain quiz (no sections)',
+    blurb:
+        'A short quiz with no section headings at all. Each item is read from '
+        'its own shape, so the types can be mixed in any order.',
+    sample: '''
+General Knowledge Quiz
+10 Items with Answers
+
+1. What is the largest planet in our solar
+   system?
+   A. Earth
+   B. Jupiter
+   C. Saturn
+   D. Mars
+   Answer: B — Jupiter
+
+2. The Great Wall of China is visible from
+   space with the naked eye.
+   Answer: False
+
+3. What is the chemical symbol for gold?
+   Answer: Au
+
+4. Name the three branches of the Philippine
+   government. (3 points)
+   Answer: Executive, Legislative, Judicial''',
+    notes: [
+      'The answer may carry its letter and the option together — B — Jupiter, B. Jupiter and plain B all work.',
+      'Item 4 is read as an enumeration because the question asks to name three and the answer has three parts. Each one earns a share of the marks.',
+      'Explanations written under an answer are ignored, so you can keep your notes in the same file.',
+    ],
+  ),
+
+  FormatSample(
     type: 'multiple-choice',
     label: 'Multiple Choice',
     blurb: 'Bubbled on the answer sheet. The scanner reads which letter was shaded.',

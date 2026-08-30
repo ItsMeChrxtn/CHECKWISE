@@ -370,6 +370,31 @@ function resolveType(sectionType, block, questionText) {
 
   if (declared) return declared;
 
+  /*
+   * An enumeration written without a section to declare it.
+   *
+   * Commas alone are not enough — "Manila, Philippines" is one identification
+   * answer, not two items. So the question itself has to ask for a list, or
+   * declare marks that match how many parts the answer has. Read as an
+   * identification instead, a student would have to reproduce the whole comma
+   * string exactly to score anything.
+   */
+  if (written) {
+    const parts = written.split(/\s*[,;]\s*/).filter(Boolean);
+    if (parts.length >= 2) {
+      const asksForList =
+        /\b(list|enumerate)\b/i.test(questionText) ||
+        /\b(name|give|identify|state)\s+(the\s+)?(two|three|four|five|six|seven|eight|nine|ten|\d+)\b/i.test(
+          questionText
+        );
+      const declaredPoints = questionText.match(/\((\d{1,3})\s*(?:points?|pts?)\)/i);
+      const pointsMatchParts =
+        declaredPoints && Number(declaredPoints[1]) === parts.length;
+
+      if (asksForList || pointsMatchParts) return "enumeration";
+    }
+  }
+
   if (/_{3,}/.test(questionText)) return "fill-in-the-blanks";
   return "identification";
 }
@@ -426,19 +451,31 @@ function applyAnswer(question, rawAnswer, warnings) {
         question.correctAnswers = [letter[1].toUpperCase()];
         return;
       }
-      // The answer was written out in full, or copied with its letter attached.
-      const labelled = answer.match(/^([A-Ha-h])\s*[.)\]]\s+(.*)$/);
+      /*
+       * The letter with its option spelled out beside it: "B. Jupiter",
+       * "B - Jupiter", "B: Jupiter", "B — Jupiter".
+       *
+       * The separator set matters. It used to accept only . ) and ], so an
+       * answer key written the common way — letter, dash, the option — matched
+       * nothing and the item lost its answer entirely.
+       */
+      const labelled = answer.match(/^([A-Ha-h])\s*[.)\]:–—-]\s*(.*)$/);
       if (labelled) {
         question.correctAnswers = [labelled[1].toUpperCase()];
         return;
       }
-      const index = question.choices.findIndex(
-        (choice) => choice.toLowerCase() === answer.toLowerCase()
-      );
+
+      // Written out without its letter, or with one this exam does not use.
+      const stripped = answer.replace(/^[A-Ha-h]\s*[.)\]:–—-]\s*/, "").trim();
+      const index = question.choices.findIndex((choice) => {
+        const c = choice.trim().toLowerCase();
+        return c === answer.toLowerCase() || c === stripped.toLowerCase();
+      });
       if (index !== -1) {
         question.correctAnswers = [String.fromCharCode(65 + index)];
         return;
       }
+
       warnings.push(`${describe(question)}: "${answer}" matches no choice.`);
       return;
     }
