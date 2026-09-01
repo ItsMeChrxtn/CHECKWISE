@@ -91,17 +91,19 @@ const PRINCIPLES = [
 /**
  * The published Android build.
  *
- * `file` is served straight out of `client/public/`, so it works the same in
- * `vite dev` and on any static host — Netlify and friends serve a real file in
- * preference to the SPA fallback, so no redirect rule is needed.
+ * The APK is a GitHub release asset rather than a file in `client/public/`.
+ * At 55MB it was being committed on every build, and a binary that large in
+ * the history slows every clone the deploy makes for the rest of the repo's
+ * life. A release holds it once, outside git, and serves it with the right
+ * content type already set.
  *
- * These three strings describe the binary sitting in that folder. Update them
- * together with the file; there is no build step wiring them up.
+ * These strings describe that asset. Update them together with the release;
+ * there is no build step wiring them up.
  */
 const ANDROID_BUILD = {
-  file: "/checkwise.apk",
-  version: "0.1.0",
-  size: "54.9 MB",
+  file: "https://github.com/ItsMeChrxtn/CHECKWISE/releases/latest/download/checkwise.apk",
+  version: "0.2.0",
+  size: "55.2 MB",
   minAndroid: "7.0",
 };
 
@@ -483,13 +485,17 @@ function MobileApp() {
 
               <div className="mt-8 flex flex-wrap items-center gap-4">
                 {/*
-                  A plain link, not a router Link: this must leave the SPA and
-                  hit the static file, or the router would swallow it and render
+                  A plain link, not a router Link: this leaves the SPA for
+                  GitHub, and the router would otherwise swallow it and render
                   the not-found page.
+
+                  No `download` attribute: the file is on another origin, where
+                  the attribute is ignored anyway, and GitHub already sends it
+                  as an attachment.
                 */}
                 <a
                   href={ANDROID_BUILD.file}
-                  download
+                  rel="noopener"
                   className="inline-flex h-12 items-center gap-2.5 rounded-lg bg-brand-600 px-6 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
                 >
                   <Download size={17} aria-hidden="true" />
