@@ -152,7 +152,7 @@ export default function CameraScanner({ exam, onScored, onClose }) {
 
       if (!seen) {
         stableRef.current = { page: null, count: 0 };
-        setHint("Line the whole sheet up — all four black corners must be visible.");
+        setHint("Get the whole sheet in frame — all four black corners visible. Tilt is fine.");
         return;
       }
 
@@ -251,8 +251,6 @@ export default function CameraScanner({ exam, onScored, onClose }) {
 
         {(status === "live" || status === "reading") && (
           <div className="pointer-events-none absolute inset-0">
-            {/* A frame to aim with - the sheet should fill it corner to corner. */}
-            <div className="absolute inset-5 rounded-lg border-2 border-dashed border-white/40" />
             <p className="absolute inset-x-0 bottom-3 text-center text-sm font-medium text-white drop-shadow">
               {status === "reading" ? "Reading…" : hint}
             </p>
@@ -264,7 +262,7 @@ export default function CameraScanner({ exam, onScored, onClose }) {
         <p className="text-xs text-ink-300">
           {totalPages > 1
             ? `${captured.length} of ${totalPages} pages captured${captured.length ? ` (${captured.join(", ")})` : ""}`
-            : "Hold the sheet flat and fill the frame."}
+            : "Point the camera at the sheet."}
         </p>
         <Button variant="secondary" size="sm" onClick={onClose}>
           <X size={15} aria-hidden="true" />

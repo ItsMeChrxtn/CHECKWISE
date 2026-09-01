@@ -1,3 +1,4 @@
+import '../core/sheet_vision.dart';
 import 'user.dart';
 
 /// The six question types CheckWise understands, and their human labels.
@@ -144,6 +145,7 @@ class Exam {
     this.totalPoints = 0,
     this.answerKeyConfirmed = false,
     this.hasAnswerSheet = false,
+    this.sheetLayout,
     this.hasExamPdf = false,
     this.strictWrittenAnswers = true,
     this.modifiedTrueFalseScoring = 'whole',
@@ -171,6 +173,11 @@ class Exam {
       // and the scanner cannot read a paper without it.
       hasAnswerSheet: json['answerSheetLayout'] != null ||
           json['answerSheetPath'] != null,
+      // Carried so the phone can recognise the sheet in the viewfinder and
+      // fire the shutter itself, the way the web scanner does.
+      sheetLayout: SheetLayout.fromJson(
+        json['answerSheetLayout'] as Map<String, dynamic>?,
+      ),
       hasExamPdf: json['examPdfPath'] != null,
       strictWrittenAnswers: asBool(grading['strictWrittenAnswers'], true),
       modifiedTrueFalseScoring:
@@ -198,6 +205,9 @@ class Exam {
   final double totalPoints;
   final bool answerKeyConfirmed;
   final bool hasAnswerSheet;
+
+  /// Where the markers and page squares were printed, when a sheet exists.
+  final SheetLayout? sheetLayout;
   final bool hasExamPdf;
   final bool strictWrittenAnswers;
 

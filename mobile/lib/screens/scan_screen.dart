@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../core/api_client.dart';
 import '../core/formatters.dart';
+import '../core/sheet_vision.dart';
 import '../core/theme.dart';
 import '../models/exam.dart';
 import '../services/services.dart';
@@ -19,9 +21,15 @@ import '../widgets/common.dart';
 /// page carries a run of squares along its bottom edge saying which page it is,
 /// so they can be shot in any order.
 ///
-/// Unlike the web scanner this does not fire by itself — it has no port of the
-/// browser's corner-square detector — so the shutter is yours. The server does
-/// all the actual reading either way.
+/// The shutter fires by itself. Every preview frame is checked for the corner
+/// squares, and the moment a page is recognised it is photographed - there is
+/// nothing to line up and no button to find. Once every page of the sheet has
+/// been caught the paper is sent without being asked, so pointing the camera
+/// at a stack is the whole interaction.
+///
+/// Only the recognising happens here. The marks themselves are still read on
+/// the server from the full-resolution photo, because a preview frame is far
+/// too coarse to tell a shaded bubble from an empty one.
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key, required this.exam});
 
@@ -42,6 +50,19 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   bool _busy = false;
   bool _uploading = false;
 
+  /// Which pages of the sheet have already been caught, so the same page is
+  /// not photographed twice while the camera lingers on it.
+  final Set<int> _capturedPages = <int>{};
+
+  /// A sighting has to repeat before the shutter fires. One frame is enough
+  /// to be a reflection or a half-turned page; two in a row is a sheet.
+  int? _pendingPage;
+  int _pendingFrames = 0;
+  bool _detecting = false;
+  bool _streaming = false;
+  DateTime _lastLook = DateTime.fromMillisecondsSinceEpoch(0);
+  String? _sheetHint;
+
   /// The paper just scored, shown over the viewfinder. Holding it here rather
   /// than navigating away is the point: a teacher works through a stack, and
   /// the score for the sheet in their hand should appear without the camera
@@ -59,6 +80,9 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // Disposing the controller tears the stream down with it, so there is
+    // nothing to await here - and dispose() cannot await anyway.
+    _streaming = false;
     _camera?.dispose();
     _studentName.dispose();
     super.dispose();
@@ -72,6 +96,7 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
     if (camera == null || !camera.value.isInitialized) return;
 
     if (state == AppLifecycleState.inactive) {
+      _streaming = false;
       camera.dispose();
       _camera = null;
     } else if (state == AppLifecycleState.resumed) {
@@ -94,11 +119,14 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
 
       // A sheet is read by finding small printed squares, so resolution is the
       // one setting that actually decides whether a paper can be scored.
+      // yuv420 rather than jpeg: the preview has to be streamed frame by frame
+      // for the shutter to fire itself, and its luminance plane is already the
+      // greyscale the reader wants. Stills are still full-resolution JPEGs.
       final controller = CameraController(
         back,
         ResolutionPreset.veryHigh,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
+        imageFormatGroup: ImageFormatGroup.yuv420,
       );
 
       final ready = controller.initialize();
@@ -108,7 +136,9 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
         _cameraError = null;
       });
       await ready;
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {});
+      _startWatching();
     } on CameraException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -116,6 +146,169 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
             'The camera could not be opened. Check the app’s permissions.';
       });
     }
+  }
+
+  /// Starts looking for the sheet in the preview.
+  ///
+  /// Nothing happens without a printed layout to look for - an exam whose sheet
+  /// has not been generated has no markers to find - and in that case the manual
+  /// shutter is all there is.
+  void _startWatching() {
+    final camera = _camera;
+    final layout = widget.exam.sheetLayout;
+    if (camera == null || layout == null || !layout.usable || _streaming) return;
+
+    _streaming = true;
+    camera.startImageStream(_onFrame).catchError((Object _) {
+      // A device that will not stream still scans perfectly well by hand.
+      _streaming = false;
+    });
+  }
+
+  Future<void> _stopWatching() async {
+    final camera = _camera;
+    if (camera == null || !_streaming) return;
+    _streaming = false;
+    try {
+      await camera.stopImageStream();
+    } on CameraException {
+      // Already stopped, or the camera is going away with the screen.
+    }
+  }
+
+  /// Looks at one preview frame.
+  ///
+  /// Frames arrive faster than they can be read, so most are dropped: the
+  /// reader is given roughly five looks a second, which is far quicker than a
+  /// person can move a sheet into place and leaves the preview smooth.
+  Future<void> _onFrame(CameraImage image) async {
+    if (_detecting || _busy || _uploading || _scored != null) return;
+
+    final now = DateTime.now();
+    if (now.difference(_lastLook).inMilliseconds < 180) return;
+    _lastLook = now;
+
+    final layout = widget.exam.sheetLayout;
+    if (layout == null) return;
+
+    _detecting = true;
+    try {
+      final frame = _toGrey(image);
+      final seen = frame == null ? null : findSheet(frame, layout);
+
+      if (seen == null) {
+        _pendingPage = null;
+        _pendingFrames = 0;
+        return;
+      }
+
+      if (_capturedPages.contains(seen.page)) {
+        _showHint(layout.pages > 1
+            ? 'Page ${seen.page} is already in. Show the next one.'
+            : 'Already caught. Show the next paper.');
+        return;
+      }
+
+      if (_pendingPage == seen.page) {
+        _pendingFrames += 1;
+      } else {
+        _pendingPage = seen.page;
+        _pendingFrames = 1;
+      }
+
+      if (_pendingFrames >= 2) {
+        _pendingPage = null;
+        _pendingFrames = 0;
+        await _captureSheet(seen.page, layout);
+      }
+    } finally {
+      _detecting = false;
+    }
+  }
+
+  /// Photographs the page the reader just recognised, and sends the paper once
+  /// every page of the sheet is in.
+  Future<void> _captureSheet(int page, SheetLayout layout) async {
+    final camera = _camera;
+    if (camera == null || !camera.value.isInitialized || _busy) return;
+
+    setState(() => _busy = true);
+    await _stopWatching();
+
+    try {
+      final shot = await camera.takePicture();
+      if (!mounted) return;
+
+      setState(() {
+        _pages.add(File(shot.path));
+        _capturedPages.add(page);
+        _busy = false;
+        _sheetHint = layout.pages > 1
+            ? 'Page $page caught — ${_capturedPages.length} of ${layout.pages}'
+            : 'Caught';
+      });
+
+      if (_capturedPages.length >= layout.pages) {
+        await _submit();
+        return;
+      }
+    } on CameraException catch (error) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showToast(context, error.description ?? 'Could not take the photo.',
+          isError: true);
+    }
+
+    if (mounted && _scored == null && !_uploading) _startWatching();
+  }
+
+  void _showHint(String text) {
+    if (!mounted || _sheetHint == text) return;
+    setState(() => _sheetHint = text);
+  }
+
+  /// Pulls the luminance out of a preview frame, small enough to read quickly.
+  ///
+  /// A YUV frame's first plane is already the greyscale image, so on Android
+  /// this is a stride-aware copy and nothing more. BGRA frames, which is what
+  /// iOS hands over, are converted with the Rec. 601 luma weights.
+  GreyFrame? _toGrey(CameraImage image) {
+    if (image.planes.isEmpty) return null;
+
+    const target = 520;
+    final step = (image.width / target).ceil().clamp(1, 8);
+    final outWidth = image.width ~/ step;
+    final outHeight = image.height ~/ step;
+    if (outWidth < 40 || outHeight < 40) return null;
+
+    final plane = image.planes.first;
+    final bytes = plane.bytes;
+    final rowStride = plane.bytesPerRow;
+    final pixelStride = plane.bytesPerPixel ?? 1;
+    final out = Uint8List(outWidth * outHeight);
+
+    if (pixelStride >= 4) {
+      for (var y = 0; y < outHeight; y += 1) {
+        final row = (y * step) * rowStride;
+        for (var x = 0; x < outWidth; x += 1) {
+          final i = row + (x * step) * pixelStride;
+          if (i + 2 >= bytes.length) continue;
+          out[y * outWidth + x] =
+              (bytes[i + 2] * 299 + bytes[i + 1] * 587 + bytes[i] * 114) ~/ 1000;
+        }
+      }
+    } else {
+      for (var y = 0; y < outHeight; y += 1) {
+        final row = (y * step) * rowStride;
+        for (var x = 0; x < outWidth; x += 1) {
+          final i = row + (x * step) * pixelStride;
+          if (i >= bytes.length) continue;
+          out[y * outWidth + x] = bytes[i];
+        }
+      }
+    }
+
+    return GreyFrame(outWidth, outHeight, out);
   }
 
   Future<void> _capture() async {
@@ -148,13 +341,18 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   Future<void> _submit() async {
     if (_pages.isEmpty) return;
 
+    // Held before the await: `context` must not be reached across an async
+    // gap, and stopping the preview stream is one.
+    final results = context.read<ResultService>();
+    await _stopWatching();
+
     setState(() {
       _uploading = true;
       _progress = 0;
     });
 
     try {
-      final outcome = await context.read<ResultService>().scan(
+      final outcome = await results.scan(
         widget.exam.id,
         files: _pages,
         studentName: _studentName.text,
@@ -396,6 +594,8 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
     setState(() {
       _scored = null;
       _pages.clear();
+      _capturedPages.clear();
+      _sheetHint = null;
       _studentName.clear();
       _progress = 0;
     });
@@ -526,9 +726,6 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
                 child: CameraPreview(camera),
               ),
             ),
-            // A frame the paper is meant to fill. Filling it is what makes the
-            // corner squares big enough in pixels to be found reliably.
-            const _SheetGuide(),
             Positioned(
               left: 0,
               right: 0,
@@ -544,9 +741,7 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
-                    _pages.isEmpty
-                        ? 'Fill the frame with the sheet, flat and square'
-                        : 'Page ${_pages.length + 1} — or score what you have',
+                    _hintText(),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -560,6 +755,29 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
         );
       },
     );
+  }
+
+  /// What the strip along the bottom of the viewfinder says.
+  ///
+  /// It reports rather than instructs. There is nothing for the teacher to line
+  /// up any more, so the only useful thing to show is whether the sheet has
+  /// been seen yet and how much of it is in.
+  String _hintText() {
+    final layout = widget.exam.sheetLayout;
+    if (_sheetHint != null) return _sheetHint!;
+
+    if (layout == null || !layout.usable) {
+      // No printed layout to recognise, so the shutter is the teacher's.
+      return _pages.isEmpty
+          ? 'Tap the shutter with the sheet in frame'
+          : '${_pages.length} ${plural(_pages.length, "page")} — tap to score';
+    }
+
+    if (_pages.isEmpty) return 'Point the camera at the sheet';
+
+    return layout.pages > 1
+        ? '${_capturedPages.length} of ${layout.pages} pages'
+        : 'Scoring…';
   }
 
   Widget _buildTray() {
@@ -639,51 +857,6 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
       ),
     );
   }
-}
-
-/// The corner brackets the sheet should sit inside.
-class _SheetGuide extends StatelessWidget {
-  const _SheetGuide();
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Center(
-        child: FractionallySizedBox(
-          widthFactor: 0.86,
-          heightFactor: 0.82,
-          child: CustomPaint(painter: _GuidePainter()),
-        ),
-      ),
-    );
-  }
-}
-
-class _GuidePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.85)
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-
-    // Length of each bracket arm.
-    final arm = size.shortestSide * 0.1;
-
-    void corner(Offset origin, double dx, double dy) {
-      canvas.drawLine(origin, origin.translate(arm * dx, 0), paint);
-      canvas.drawLine(origin, origin.translate(0, arm * dy), paint);
-    }
-
-    corner(Offset.zero, 1, 1);
-    corner(Offset(size.width, 0), -1, 1);
-    corner(Offset(0, size.height), 1, -1);
-    corner(Offset(size.width, size.height), -1, -1);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _PageThumb extends StatelessWidget {
