@@ -7,6 +7,7 @@ import '../core/theme.dart';
 import '../models/exam.dart';
 import '../models/result.dart';
 import '../services/services.dart';
+import 'analysis_screen.dart';
 import '../widgets/common.dart';
 import 'package:open_filex/open_filex.dart';
 
@@ -305,6 +306,17 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
             subtitle: _results.isEmpty
                 ? null
                 : '${_results.length} ${plural(_results.length, "paper")} scored',
+            trailing: _results.isEmpty
+                ? null
+                : TextButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => AnalysisScreen(exam: exam),
+                      ),
+                    ),
+                    icon: const Icon(Icons.insights_outlined, size: 18),
+                    label: const Text('Analysis'),
+                  ),
           ),
           const SizedBox(height: 10),
 

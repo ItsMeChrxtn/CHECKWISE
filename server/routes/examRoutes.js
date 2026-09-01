@@ -11,7 +11,7 @@ import {
   updateExam,
   uploadExamDocument,
 } from "../controllers/examController.js";
-import { listResults, scanAnswerSheet } from "../controllers/resultController.js";
+import { getExamAnalysis, listResults, scanAnswerSheet } from "../controllers/resultController.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { uploadExamPdf, uploadScannedImages } from "../middleware/uploadMiddleware.js";
 import { validate } from "../middleware/validationMiddleware.js";
@@ -72,5 +72,8 @@ router.get("/:id/answer-sheet", downloadAnswerSheet);
 // Phase 6: read a completed sheet and score it against the confirmed key.
 router.post("/:id/scan", uploadScannedImages, scanAnswerSheet);
 router.get("/:id/results", listResults);
+
+// How the class did per item - difficulty, discrimination and the distractors.
+router.get("/:id/analysis", getExamAnalysis);
 
 export default router;

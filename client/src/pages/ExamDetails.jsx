@@ -12,6 +12,7 @@ import {
 import Button from "../components/Button.jsx";
 import ExamDocumentPanel from "../components/ExamDocumentPanel.jsx";
 import ExamResultsPanel from "../components/ExamResultsPanel.jsx";
+import ExamAnalysisPanel from "../components/ExamAnalysisPanel.jsx";
 import Modal from "../components/Modal.jsx";
 import StatusBadge, { EXAM_STATUS_META } from "../components/StatusBadge.jsx";
 import { EmptyState, ErrorState, Spinner } from "../components/States.jsx";
@@ -235,6 +236,8 @@ export default function ExamDetails() {
       <ExamDocumentPanel exam={exam} onChange={applyExam} />
 
       <ExamResultsPanel exam={exam} />
+
+      <ExamAnalysisPanel exam={exam} />
 
       <section className="card flex items-start gap-3 p-5">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm border border-brand-100 bg-brand-50 text-brand-700">

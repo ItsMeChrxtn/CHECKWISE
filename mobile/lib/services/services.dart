@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/api_client.dart';
 import '../models/dashboard.dart';
+import '../models/analysis.dart';
 import '../models/exam.dart';
 import '../models/result.dart';
 import '../models/user.dart';
@@ -139,6 +140,13 @@ class ExamService {
   }
 
   Future<void> remove(String id) => _api.delete('/exams/$id');
+
+  /// How the class did per item. Computed on the server so the phone and the
+  /// browser can never report different figures for the same papers.
+  Future<ExamAnalysis> analysis(String examId) async {
+    final body = await _api.get('/exams/$examId/analysis');
+    return ExamAnalysis.fromJson(_data(body));
+  }
 
   /// Sends the finished exam PDF.
   ///

@@ -13,6 +13,7 @@ import {
 import { readScan } from "../services/omrService.js";
 import { gradeAnswers } from "../services/gradingService.js";
 import { readHandwriting } from "../services/handwritingService.js";
+import { analyseExam } from "../services/analysisService.js";
 
 /** Teachers see their own papers; admins see everything. */
 function buildScope(user) {
@@ -283,4 +284,30 @@ export const listAllResults = asyncHandler(async (req, res) => {
     .lean();
 
   res.json({ success: true, data: { results } });
+});
+
+/**
+ * GET /api/exams/:id/analysis
+ *
+ * How the class did on every item, not just how each student did overall.
+ * The whole `answers` array is needed here - unlike the list endpoints, which
+ * strip it - because the per-item figures are computed from it.
+ */
+export const getExamAnalysis = asyncHandler(async (req, res) => {
+  const exam = await findOwnedExam(req.params.id, req.user);
+
+  const results = await Result.find({ examId: exam._id })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const { summary, items } = analyseExam(results, exam);
+
+  res.json({
+    success: true,
+    data: {
+      exam: { id: exam._id, title: exam.title, subject: exam.subject, passingScore: exam.passingScore },
+      summary,
+      items,
+    },
+  });
 });

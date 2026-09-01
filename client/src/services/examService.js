@@ -58,6 +58,12 @@ export const examService = {
     return data;
   },
 
+  /** How the class did per item: difficulty, discrimination and distractors. */
+  async analysis(id) {
+    const { data } = await api.get(`/exams/${id}/analysis`, { timeout: 60000 });
+    return data.data;
+  },
+
   async confirmKey(id) {
     const { data } = await api.post(`/exams/${id}/confirm`);
     return data;
