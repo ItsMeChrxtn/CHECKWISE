@@ -380,17 +380,43 @@ function otsu(grey) {
  * writing and printed text from being mistaken for a marker, then refined to
  * the centre of mass of the dark pixels in a window around the best candidate.
  */
+/**
+ * Finds the four corner markers, wherever the sheet happens to sit in frame.
+ *
+ * The obvious approach - work out where each marker would be if the photo were
+ * the page, then look there - only holds for a scan. A phone held over a desk
+ * gives a sheet that is smaller than the frame, off centre and a few degrees
+ * rotated, and the marker is then nowhere near the assumed spot. So the search
+ * does not assume a position at all: every dark blob in the image is measured
+ * once, the ones shaped like the marker are kept, and the four that are the
+ * same size as each other and furthest apart are taken as the corners.
+ *
+ * Same size as each other is what makes this reliable. Letters, bubble outlines
+ * and shadows are never four identical squares at the extremes of a page-shaped
+ * quadrilateral, so the real markers win even on a cluttered desk.
+ *
+ * Everything downstream already copes with the sheet being askew - solveProjection
+ * fits a full projective transform - so this is the only place that ever needed
+ * the paper to be square on.
+ */
 function findMarkers(grey, layout) {
   const threshold = otsu(grey);
-  const { width, height } = grey;
+  const { width } = grey;
 
-  // Expected marker size in pixels, from the sheet's own proportions.
+  // What the marker would measure if the sheet filled the frame. Used only as a
+  // scale reference now: anything from a distant sheet up to a close one counts.
   const expected = (layout.markerSize / layout.pageSize.width) * width;
-  const search = Math.round(expected * 3);
 
+  const quad = chooseMarkerQuad(collectDarkBlobs(grey, threshold, expected), layout);
+  if (quad) return quad;
+
+  // Nothing page-shaped turned up. Fall back to the old fixed-position search,
+  // which still rescues a clean flatbed scan whose markers are faint enough to
+  // fail the shape test but are exactly where a scan puts them.
+  const search = Math.round(expected * 3);
   const corners = layout.markers.map(([sx, sy]) => [
     (sx / layout.pageSize.width) * width,
-    (sy / layout.pageSize.height) * height,
+    (sy / layout.pageSize.height) * grey.height,
   ]);
 
   return corners.map(([gx, gy], index) => {
@@ -398,11 +424,167 @@ function findMarkers(grey, layout) {
     if (!found) {
       throw ApiError.badRequest(
         `Could not find the ${cornerName(index)} corner marker on that scan. ` +
-          "Photograph the whole sheet, flat and evenly lit, with all four black squares visible."
+          "Hold the whole sheet in frame, flat and evenly lit, with all four black squares visible."
       );
     }
     return found;
   });
+}
+
+/** A blob has to be at least this square, and this solid, to pass for a marker. */
+const MARKER_SQUARENESS = 0.55;
+const MARKER_SOLIDITY = 0.6;
+/** How small and how large a marker may be, against a sheet that fills the frame. */
+const MARKER_MIN_SCALE = 0.12;
+const MARKER_MAX_SCALE = 1.8;
+/**
+ * How close in size two blobs must be to count as the same printed mark. This
+ * is the main thing telling a corner marker from the smaller page-number square
+ * beside it, so the window is deliberately tight.
+ */
+const GROUP_LOW = 0.75;
+const GROUP_HIGH = 1.33;
+
+/** How much the four chosen corners may differ in size from one another. */
+const MARKER_SIZE_SPREAD = 1.45;
+
+/**
+ * Measures every dark connected region in the image once, keeping the ones
+ * shaped like a marker.
+ *
+ * One pass, iterative flood fill over typed arrays: each pixel is visited at
+ * most twice however large the dark regions are, so a photo with a dark desk
+ * behind the paper costs the same as one on a white table.
+ */
+function collectDarkBlobs(grey, threshold, expected) {
+  const { width, height, data } = grey;
+  const seen = new Uint8Array(width * height);
+  const stack = new Int32Array(width * height);
+  const minBox = Math.max(3, expected * MARKER_MIN_SCALE);
+  const maxBox = expected * MARKER_MAX_SCALE;
+  const blobs = [];
+
+  for (let start = 0; start < data.length; start += 1) {
+    if (seen[start] || data[start] >= threshold) continue;
+
+    let top = 0;
+    stack[top++] = start;
+    seen[start] = 1;
+
+    let area = 0;
+    let sumX = 0;
+    let sumY = 0;
+    let minX = width;
+    let maxX = -1;
+    let minY = height;
+    let maxY = -1;
+
+    while (top > 0) {
+      const p = stack[--top];
+      const x = p % width;
+      const y = (p - x) / width;
+
+      area += 1;
+      sumX += x;
+      sumY += y;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+
+      if (x > 0 && !seen[p - 1] && data[p - 1] < threshold) { seen[p - 1] = 1; stack[top++] = p - 1; }
+      if (x < width - 1 && !seen[p + 1] && data[p + 1] < threshold) { seen[p + 1] = 1; stack[top++] = p + 1; }
+      if (y > 0 && !seen[p - width] && data[p - width] < threshold) { seen[p - width] = 1; stack[top++] = p - width; }
+      if (y < height - 1 && !seen[p + width] && data[p + width] < threshold) { seen[p + width] = 1; stack[top++] = p + width; }
+    }
+
+    const boxWidth = maxX - minX + 1;
+    const boxHeight = maxY - minY + 1;
+    const box = Math.max(boxWidth, boxHeight);
+    if (box < minBox || box > maxBox) continue;
+
+    const squareness = Math.min(boxWidth, boxHeight) / box;
+    if (squareness < MARKER_SQUARENESS) continue;
+
+    const solidity = area / (boxWidth * boxHeight);
+    if (solidity < MARKER_SOLIDITY) continue;
+
+    blobs.push({
+      x: sumX / area,
+      y: sumY / area,
+      box,
+      score: squareness * solidity,
+    });
+  }
+
+  return blobs;
+}
+
+/**
+ * Picks the four candidates that look like the corners of the sheet.
+ *
+ * Markers are printed the same size, so the candidates are grouped by size and
+ * each group judged on its own. Within a group the corners are the extremes
+ * along the two diagonals, which is rotation-tolerant in a way that taking the
+ * topmost or leftmost blob is not. The group whose quadrilateral is largest and
+ * closest to the sheet's own proportions wins.
+ */
+function chooseMarkerQuad(blobs, layout) {
+  if (blobs.length < 4) return null;
+
+  const [mx0, my0] = layout.markers[0];
+  const [mx1, my1] = layout.markers[1];
+  const [, my3] = layout.markers[3];
+  const sheetAspect = Math.abs(mx1 - mx0) / Math.max(1, Math.abs(my3 - my1 || my3 - my0));
+
+  let best = null;
+  let bestScore = 0;
+
+  for (const seed of blobs) {
+    const group = blobs.filter((b) => b.box >= seed.box * GROUP_LOW && b.box <= seed.box * GROUP_HIGH);
+    if (group.length < 4) continue;
+
+    const pick = (fn) => group.reduce((a, b) => (fn(b) < fn(a) ? b : a));
+    const tl = pick((b) => b.x + b.y);
+    const br = pick((b) => -(b.x + b.y));
+    const tr = pick((b) => -(b.x - b.y));
+    const bl = pick((b) => b.x - b.y);
+
+    const corners = [tl, tr, br, bl];
+    if (new Set(corners).size < 4) continue;
+
+    // The four markers are printed identically, so they must measure alike.
+    // Without this the page-number square along the bottom edge can slip into
+    // the group and win the bottom-left corner, which throws the whole fit.
+    const boxes = corners.map((c) => c.box);
+    if (Math.max(...boxes) / Math.min(...boxes) > MARKER_SIZE_SPREAD) continue;
+
+    const spanTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+    const spanLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+    if (spanTop < seed.box * 3 || spanLeft < seed.box * 3) continue;
+
+    // Shoelace area of the quad, and how close its shape is to the real sheet.
+    let area = 0;
+    for (let i = 0; i < 4; i += 1) {
+      const p = corners[i];
+      const q = corners[(i + 1) % 4];
+      area += p.x * q.y - q.x * p.y;
+    }
+    area = Math.abs(area) / 2;
+    if (area <= 0) continue;
+
+    const aspect = spanTop / spanLeft;
+    const aspectFit = 1 - Math.min(1, Math.abs(aspect - sheetAspect) / sheetAspect);
+    const shape = corners.reduce((sum, c) => sum + c.score, 0) / 4;
+    const score = area * aspectFit * shape;
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = corners.map((c) => [c.x, c.y]);
+    }
+  }
+
+  return best;
 }
 
 function cornerName(index) {
@@ -590,3 +772,4 @@ function scaleOf(transform, layout) {
   );
   return pixels / points;
 }
+
