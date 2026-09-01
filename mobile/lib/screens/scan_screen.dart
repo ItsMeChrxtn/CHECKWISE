@@ -41,6 +41,12 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
 
   bool _busy = false;
   bool _uploading = false;
+
+  /// The paper just scored, shown over the viewfinder. Holding it here rather
+  /// than navigating away is the point: a teacher works through a stack, and
+  /// the score for the sheet in their hand should appear without the camera
+  /// going anywhere.
+  ScanOutcome? _scored;
   int _progress = 0;
 
   @override
@@ -158,11 +164,10 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
       );
 
       if (!mounted) return;
-      // Hand the scored paper back to the exam screen rather than pushing the
-      // result from here: this route covers the whole shell, and the score is
-      // something you read inside it. Going "back" from a score should land on
-      // the exam, never on the camera with the same pages still loaded.
-      Navigator.of(context).pop(outcome);
+      setState(() {
+        _scored = outcome;
+        _uploading = false;
+      });
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() => _uploading = false);
@@ -173,11 +178,15 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      // Leaving mid-stack would silently discard pages already shot.
-      canPop: _pages.isEmpty && !_uploading,
+      // Every exit is handled here rather than by the framework. Leaving on a
+      // system back after scoring a stack used to pop with no result, so the
+      // exam behind it never reloaded and showed none of the papers just
+      // scanned. And leaving mid-stack would silently discard pages already
+      // shot.
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop || _uploading) return;
-        _confirmDiscard();
+        if (didPop) return;
+        _leave();
       },
       child: Scaffold(
         backgroundColor: Slate.c900,
@@ -189,10 +198,35 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
             style: const TextStyle(color: Colors.white, fontSize: 16),
           ),
           iconTheme: const IconThemeData(color: Colors.white),
+          leading: IconButton(
+            icon: const Icon(Icons.close_rounded),
+            tooltip: 'Close scanner',
+            onPressed: _leave,
+          ),
         ),
-        body: _uploading ? _buildUploading() : _buildScanner(),
+        body: _scored != null
+            ? _buildScored(_scored!)
+            : _uploading
+                ? _buildUploading()
+                : _buildScanner(),
       ),
     );
+  }
+
+  /// The single way out, so the exam behind always learns what happened.
+  void _leave() {
+    if (_uploading) return;
+
+    // Something was scored: hand the last paper back so the exam reloads.
+    if (_scored != null) {
+      Navigator.of(context).pop(_scored);
+      return;
+    }
+    if (_pages.isNotEmpty) {
+      _confirmDiscard();
+      return;
+    }
+    Navigator.of(context).pop();
   }
 
   Future<void> _confirmDiscard() async {
@@ -220,6 +254,151 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
     );
 
     if (discard == true && mounted) Navigator.of(context).pop();
+  }
+
+  /// The score, the moment the paper comes back.
+  ///
+  /// Deliberately the whole screen rather than a toast: this is the number the
+  /// teacher is scanning to find out, and it has to survive them looking down
+  /// at the next sheet. The record is already in the database by the time this
+  /// draws — the server writes it before replying — so leaving now loses
+  /// nothing.
+  Widget _buildScored(ScanOutcome outcome) {
+    final r = outcome.result;
+    final tint = r.passed ? Signal.pass : Signal.fail;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        r.isUnnamed ? 'Paper scored' : r.studentName,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Score out of the total the exam is worth.
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            marks(r.score),
+                            style: TextStyle(
+                              fontSize: 68,
+                              fontWeight: FontWeight.w700,
+                              color: tint,
+                              height: 1,
+                            ),
+                          ),
+                          Text(
+                            ' / ${marks(r.totalPoints)}',
+                            style: const TextStyle(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        '${percent(r.percentage)}  ·  ${r.passed ? "Passed" : "Did not pass"}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: tint,
+                        ),
+                      ),
+
+                      const SizedBox(height: 22),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _Tally(label: 'Correct', value: r.correctAnswers, tint: Signal.pass),
+                          _Tally(label: 'Wrong', value: r.wrongAnswers, tint: Signal.fail),
+                          if (r.needsAttentionCount > 0)
+                            _Tally(
+                              label: 'To review',
+                              value: r.needsAttentionCount,
+                              tint: Signal.warn,
+                            ),
+                        ],
+                      ),
+
+                      if (r.needsAttention) ...[
+                        const SizedBox(height: 18),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Signal.warn.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '${r.needsAttentionCount} ${plural(r.needsAttentionCount, "item")} '
+                            'need a look. Nothing flagged earns marks until you settle it.',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.white,
+                              height: 1.45,
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Saved to this exam.',
+                        style: TextStyle(fontSize: 12, color: Colors.white38),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            FilledButton.icon(
+              onPressed: _scanNext,
+              icon: const Icon(Icons.document_scanner_rounded, size: 19),
+              label: const Text('Scan the next paper'),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: _leave,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white24),
+              ),
+              child: const Text('Open this paper'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Clears the finished paper and returns to the viewfinder for the next one.
+  void _scanNext() {
+    setState(() {
+      _scored = null;
+      _pages.clear();
+      _studentName.clear();
+      _progress = 0;
+    });
   }
 
   Widget _buildUploading() {
@@ -659,6 +838,32 @@ class _TrayButton extends StatelessWidget {
             size: 22,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// One count under the score — correct, wrong, or waiting on a person.
+class _Tally extends StatelessWidget {
+  const _Tally({required this.label, required this.value, required this.tint});
+
+  final String label;
+  final int value;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Column(
+        children: [
+          Text(
+            '$value',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: tint),
+          ),
+          const SizedBox(height: 2),
+          Text(label, style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
+        ],
       ),
     );
   }

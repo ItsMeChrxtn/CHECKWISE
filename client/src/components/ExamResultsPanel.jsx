@@ -25,6 +25,13 @@ export default function ExamResultsPanel({ exam }) {
   const [studentName, setStudentName] = useState("");
   const [files, setFiles] = useState([]);
   const [scanning, setScanning] = useState(false);
+
+  /*
+   * The paper just scored, kept on screen rather than announced in a toast.
+   * This is the number the teacher is scanning to find out, and a toast is gone
+   * before they have looked up from the next sheet.
+   */
+  const [justScored, setJustScored] = useState(null);
   const [progress, setProgress] = useState(0);
   const [openId, setOpenId] = useState(null);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -60,12 +67,11 @@ export default function ExamResultsPanel({ exam }) {
         { files, studentName: studentName.trim() },
         setProgress
       );
-      toast.success(response.message);
+      setJustScored(response.data.result);
       setStudentName("");
       setFiles([]);
       if (inputRef.current) inputRef.current.value = "";
       await load();
-      setOpenId(response.data.result._id);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -98,6 +104,7 @@ export default function ExamResultsPanel({ exam }) {
       </div>
 
       <div className="space-y-4 p-5">
+        {justScored && <ScoreCard result={justScored} onDismiss={() => setJustScored(null)} />}
         {!ready ? (
           <p className="text-sm text-ink-500">
             Generate the answer sheet first. The scanner reads its layout to know where every
@@ -432,5 +439,64 @@ function shortSection(section) {
 function isWritten(type) {
   return (
     type === "identification" || type === "fill-in-the-blanks" || type === "enumeration"
+  );
+}
+
+/**
+ * The score, the moment the paper comes back.
+ *
+ * The record is already in the database by the time this renders — the server
+ * writes it before replying — so this is a read-out, not a step that has to be
+ * completed for the mark to be kept.
+ */
+function ScoreCard({ result, onDismiss }) {
+  const flagged =
+    (result.pendingReview || 0) + (result.ambiguousAnswers || 0) + (result.blankAnswers || 0);
+
+  /*
+   * Written out in full rather than built from a `pass`/`fail` variable.
+   * Tailwind scans source text for whole class names, so `bg-${tone}-50`
+   * generates nothing — it only worked here because other files happened to use
+   * the same classes, and would have gone colourless the moment they stopped.
+   */
+  const tone = result.passed
+    ? { card: "border-pass-100 bg-pass-50", text: "text-pass-700" }
+    : { card: "border-fail-100 bg-fail-50", text: "text-fail-700" };
+
+  return (
+    <div className={`rounded-lg border p-4 ${tone.card}`}>
+      <div className="flex flex-wrap items-center gap-4">
+        <p className={`figure text-4xl leading-none ${tone.text}`}>
+          {result.score}
+          <span className="text-2xl text-ink-400"> / {result.totalPoints}</span>
+        </p>
+
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-ink-900">{result.studentName}</p>
+          <p className={`text-sm font-semibold ${tone.text}`}>
+            {Math.round(result.percentage)}% · {result.passed ? "Passed" : "Did not pass"}
+          </p>
+          <p className="mt-0.5 text-xs text-ink-500">
+            {result.correctAnswers} correct · {result.wrongAnswers} wrong
+            {flagged > 0 && ` · ${flagged} to review`} · saved to this exam
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="rounded-md px-3 py-1.5 text-sm font-semibold text-ink-600 hover:bg-white"
+        >
+          Scan another
+        </button>
+      </div>
+
+      {flagged > 0 && (
+        <p className="mt-3 border-t border-warn-100 pt-3 text-xs leading-relaxed text-warn-700">
+          {flagged} item{flagged === 1 ? "" : "s"} need a look. Nothing flagged earns marks until
+          you settle it below.
+        </p>
+      )}
+    </div>
   );
 }
