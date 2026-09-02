@@ -102,8 +102,8 @@ const PRINCIPLES = [
  */
 const ANDROID_BUILD = {
   file: "https://github.com/ItsMeChrxtn/CHECKWISE/releases/latest/download/checkwise.apk",
-  version: "0.2.0",
-  size: "55.2 MB",
+  version: "0.2.1",
+  size: "56.3 MB",
   minAndroid: "10",
 };
 
