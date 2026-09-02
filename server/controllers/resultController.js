@@ -10,7 +10,7 @@ import {
   remove as removeFile,
   saveBuffer,
 } from "../services/storageService.js";
-import { readScan } from "../services/omrService.js";
+import { pageCount, readScan } from "../services/omrService.js";
 import { gradeAnswers } from "../services/gradingService.js";
 import { readHandwriting } from "../services/handwritingService.js";
 import { analyseExam } from "../services/analysisService.js";
@@ -84,16 +84,52 @@ export const scanAnswerSheet = asyncHandler(async (req, res) => {
   const pagesRead = [];
   const crops = new Map();
 
+  const take = (readings) => {
+    for (const reading of readings) {
+      for (const [questionNumber, mark] of reading.marks) marks.set(questionNumber, mark);
+      for (const crop of reading.crops ?? []) crops.set(crop.questionNumber, crop);
+      pagesRead.push(reading.page);
+      diagnostics.push({ page: reading.page, ...reading.diagnostics });
+    }
+  };
+
   try {
+    // Pages whose own marks could not be read. Held back rather than refused,
+    // because the rest of the upload usually says what they must be.
+    const unknown = [];
+
     for (let i = 0; i < keys.length; i += 1) {
       // Each page says which one it is, so files can arrive in any order - and
       // one PDF can hold every page of the sheet at once.
-      const readings = await readScan(keys[i], exam.answerSheetLayout, declared[i] ?? null);
-      for (const reading of readings) {
-        for (const [questionNumber, mark] of reading.marks) marks.set(questionNumber, mark);
-        for (const crop of reading.crops ?? []) crops.set(crop.questionNumber, crop);
-        pagesRead.push(reading.page);
-        diagnostics.push({ page: reading.page, ...reading.diagnostics });
+      try {
+        take(await readScan(keys[i], exam.answerSheetLayout, declared[i] ?? null));
+      } catch (error) {
+        if (error.code !== "page-unknown") throw error;
+        unknown.push(i);
+      }
+    }
+
+    if (unknown.length > 0) {
+      // Elimination, not guesswork: if three pages of a four-page sheet named
+      // themselves, the fourth image can only be the page they left out. It is
+      // resolved only when exactly as many pages are missing as are unread, so
+      // a paper is never scored against a page it might not be.
+      const total = pageCount(exam.answerSheetLayout);
+      const missing = [];
+      for (let page = 1; page <= total; page += 1) {
+        if (!pagesRead.includes(page)) missing.push(page);
+      }
+
+      if (missing.length !== unknown.length) {
+        throw ApiError.badRequest(
+          "Could not tell which page of the sheet " +
+            (unknown.length === 1 ? "one of these photos is" : "some of these photos are") +
+            ". Make sure the small squares along the bottom edge are in frame and not covered."
+        );
+      }
+
+      for (let k = 0; k < unknown.length; k += 1) {
+        take(await readScan(keys[unknown[k]], exam.answerSheetLayout, missing[k]));
       }
     }
   } catch (error) {

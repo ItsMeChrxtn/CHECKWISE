@@ -81,13 +81,24 @@ function analyse(grey, layout, pageNumber = null) {
   const radius = layout.bubbleRadius * scaleOf(transform, layout);
 
   const detectedPage = readPageMark(grey, layout, transform, radius, threshold);
-  const page = pageNumber ?? detectedPage;
+
+  // A sheet printed on one page has nothing to disambiguate, so the marks
+  // along the bottom edge do not have to be readable for it to be scored.
+  // They are 7 points across, which is small enough that a hand-held photo
+  // can lose them to blur or a cropped edge - and refusing the whole paper
+  // over a detail that carries no information was never right.
+  const onlyPage = pageCount(layout) === 1 ? 1 : null;
+  const page = pageNumber ?? detectedPage ?? onlyPage;
 
   if (!page) {
-    throw ApiError.badRequest(
+    const error = ApiError.badRequest(
       "Could not tell which page of the sheet this is. Make sure the small squares along the " +
         "bottom edge are in frame and not covered."
     );
+    // Marked so the caller can work the page out by elimination instead,
+    // when it knows what the other pages of the same upload turned out to be.
+    error.code = "page-unknown";
+    throw error;
   }
 
   const bubbles = layout.bubbles.filter((b) => (b.page ?? 1) === page);
@@ -675,6 +686,11 @@ function findDarkBlob(grey, cx, cy, radius, threshold, expected) {
 
   // A blurred photo still gives a square-ish blob; anything below this is not one.
   return bestScore > 0.45 ? best : null;
+}
+
+/** How many pages the printed sheet runs to. */
+export function pageCount(layout) {
+  return (layout.bubbles ?? []).reduce((most, b) => Math.max(most, b.page ?? 1), 1);
 }
 
 /** Fraction of a disc that is darker than the ink threshold. */
