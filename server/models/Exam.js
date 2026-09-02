@@ -52,6 +52,16 @@ const questionSchema = new mongoose.Schema(
      * what the student sees matches the questionnaire in their hands.
      */
     section: { type: String, default: "", trim: true, maxlength: 120 },
+    /**
+     * The "Direction:" line as the teacher wrote it, carried on every question
+     * of the section it belongs to.
+     *
+     * There is no section entity to hang it on - a section is just a label
+     * repeated across its questions - so this repeats the same way `section`
+     * does. The answer sheet prints it under the heading, and falls back to a
+     * sentence written for the question type when a paper did not carry one.
+     */
+    directions: { type: String, default: "", trim: true, maxlength: 400 },
     sectionNumber: { type: Number, default: null, min: 1 },
     questionType: { type: String, enum: QUESTION_TYPES, required: true },
     questionText: { type: String, default: "", trim: true, maxlength: 2000 },

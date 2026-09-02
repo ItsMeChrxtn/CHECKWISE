@@ -71,6 +71,17 @@ const ROW = {
 };
 
 const SECTION_HEADING_HEIGHT = 22;
+/** Between the directions line and the first row under it. */
+const DIRECTIONS_GAP = 6;
+/**
+ * Between the last row of one section and the heading of the next.
+ *
+ * Kept tight on purpose. A section is a block now, so it either fits in the
+ * space left on a page or moves to the next one whole - which means a few
+ * points of padding here decides whole pages. A four-section paper was
+ * spilling onto a third page for want of three.
+ */
+const SECTION_GAP = 10;
 
 const COLORS = {
   ink: "#111111",
@@ -147,41 +158,77 @@ export async function generateAnswerSheet(exam) {
     cursor.y = cursor.top;
   };
 
-  /** Moves to the next column, or the next page once both are used. */
-  const nextColumn = () => {
-    if (cursor.column === 0) {
-      cursor.column = 1;
-      cursor.y = cursor.top;
-    } else {
-      startPage(false);
-    }
-    // A section running past a column break says so, so the numbers read right.
-    if (section) {
-      cursor.y = drawSectionHeading(doc, `${section} (continued)`, cursor);
-    }
-  };
-
   startPage(true);
 
   const questions = [...exam.questions].sort((a, b) => a.questionNumber - b.questionNumber);
 
-  for (const question of questions) {
-    const height = rowHeight(question);
+  /*
+   * A section is laid out as one block, not as a stream.
+   *
+   * Numbers used to run down the left column until it was full and then carry on
+   * down the right, which put 1-23 beside 24-40 and needed a "(continued)"
+   * heading halfway through a section that had not actually ended. Splitting the
+   * section evenly instead puts 1-20 beside 21-40: the two columns are the same
+   * length, the heading is written once, and the eye can compare rows across.
+   */
+  for (const group of groupBySection(questions)) {
+    section = group.section;
+    let remaining = group.questions;
+    let continued = false;
 
-    if ((question.section || "") !== section) {
-      section = question.section || "";
-      if (section) {
-        // Never leave a heading stranded at the foot of a column.
-        if (cursor.y + SECTION_HEADING_HEIGHT + height > CONTENT.bottom) {
-          cursor.column === 0 ? ((cursor.column = 1), (cursor.y = cursor.top)) : startPage(false);
+    while (remaining.length > 0) {
+      const heading = section
+        ? SECTION_HEADING_HEIGHT + directionsHeight(doc, group)
+        : 0;
+
+      let plan = planBlock(remaining, CONTENT.bottom - (cursor.y + heading));
+
+      // Nothing fits here. If a fresh page would hold the whole section, start
+      // one rather than tearing two items off the end of this page.
+      if (!plan || (!continued && plan.take < remaining.length)) {
+        const fresh = CONTENT.bottom - (PAGE.margin + MARKER + 12 + heading);
+        const whole = planBlock(remaining, fresh);
+        if (!plan || (whole && whole.take > plan.take)) {
+          startPage(false);
+          plan = planBlock(remaining, CONTENT.bottom - (cursor.y + heading));
         }
-        cursor.y = drawSectionHeading(doc, section, cursor);
       }
+
+      // A single row taller than a whole page would loop for ever; take one and
+      // let it overflow rather than hang.
+      if (!plan) plan = { take: 1, leftCount: 1 };
+
+      if (section) {
+        cursor.column = 0;
+        cursor.y = drawSectionHeading(
+          doc,
+          continued ? `${section} (continued)` : section,
+          cursor,
+          CONTENT.right - CONTENT.left
+        );
+        cursor.y = drawDirections(doc, group, cursor);
+      }
+
+      const top = cursor.y;
+      const left = remaining.slice(0, plan.leftCount);
+      const right = remaining.slice(plan.leftCount, plan.take);
+
+      cursor.column = 0;
+      cursor.y = top;
+      for (const question of left) cursor.y = drawQuestionRow(doc, question, cursor, layout);
+      const leftBottom = cursor.y;
+
+      cursor.column = 1;
+      cursor.y = top;
+      for (const question of right) cursor.y = drawQuestionRow(doc, question, cursor, layout);
+
+      cursor.column = 0;
+      cursor.y = Math.max(leftBottom, cursor.y) + SECTION_GAP;
+
+      remaining = remaining.slice(plan.take);
+      continued = true;
+      if (remaining.length > 0) startPage(false);
     }
-
-    if (cursor.y + height > CONTENT.bottom) nextColumn();
-
-    cursor.y = drawQuestionRow(doc, question, cursor, layout);
   }
 
   drawFooter(doc, exam, cursor.page);
@@ -193,6 +240,95 @@ export async function generateAnswerSheet(exam) {
   });
 
   return { key, pageCount: cursor.page, layout };
+}
+
+/** Questions in document order, gathered under the section they belong to. */
+function groupBySection(questions) {
+  const groups = [];
+  for (const question of questions) {
+    const section = question.section || "";
+    const last = groups[groups.length - 1];
+    if (last && last.section === section) {
+      last.questions.push(question);
+      continue;
+    }
+    groups.push({
+      section,
+      // Every question of a section carries the same directions; the first is
+      // as good as any, and an empty one falls back on the question type.
+      directions: (question.directions || "").trim(),
+      questionType: question.questionType,
+      questions: [question],
+    });
+  }
+  return groups;
+}
+
+/**
+ * The longest run of these items that fits in two columns of `available`
+ * height, divided as evenly as the row heights allow.
+ *
+ * Rows are not all the same height - a modified true-or-false item carries a
+ * correction line, an enumeration several - so the split is measured rather
+ * than assumed to be the halfway index.
+ */
+function planBlock(items, available) {
+  if (available <= 0) return null;
+
+  for (let take = items.length; take > 0; take -= 1) {
+    const leftCount = Math.ceil(take / 2);
+    const left = totalHeight(items.slice(0, leftCount));
+    const right = totalHeight(items.slice(leftCount, take));
+    if (left <= available && right <= available) return { take, leftCount };
+  }
+  return null;
+}
+
+const totalHeight = (items) => items.reduce((sum, q) => sum + rowHeight(q), 0);
+
+/**
+ * What the students are told to do in this section.
+ *
+ * The teacher's own wording is used when the paper carried a directions line,
+ * because it is what the class was told; the fallbacks are only for a key that
+ * did not have one.
+ */
+function directionsFor(group) {
+  if (group.directions) return group.directions;
+  return DEFAULT_DIRECTIONS[group.questionType] ?? "";
+}
+
+const DEFAULT_DIRECTIONS = {
+  "multiple-choice":
+    "Read each item carefully, then shade the circle that corresponds to the letter of the correct answer.",
+  "true-false":
+    "Determine whether each statement is true or false. Shade the circle under T if TRUE, or under F if FALSE.",
+  "modified-true-false":
+    "Shade T if the statement is true. If it is false, shade F and write the word that makes it true.",
+  identification:
+    "Identify the term, concept, or element being described. Write your answer legibly on the space provided.",
+  "fill-in-the-blanks": "Write the missing word on the space provided.",
+  enumeration: "List the items asked for, one to a line.",
+};
+
+/** How much room the directions line will need, without drawing it. */
+function directionsHeight(doc, group) {
+  const text = directionsFor(group);
+  if (!text) return 0;
+
+  doc.font("Helvetica-Oblique").fontSize(7.5);
+  return doc.heightOfString(text, { width: CONTENT.right - CONTENT.left }) + DIRECTIONS_GAP;
+}
+
+function drawDirections(doc, group, cursor) {
+  const text = directionsFor(group);
+  if (!text) return cursor.y;
+
+  const width = CONTENT.right - CONTENT.left;
+  doc.font("Helvetica-Oblique").fontSize(7.5).fillColor(COLORS.muted);
+  doc.text(text, CONTENT.left, cursor.y, { width });
+
+  return cursor.y + doc.heightOfString(text, { width }) + DIRECTIONS_GAP;
 }
 
 /** Four corner squares - the scanner's reference frame. */
@@ -279,16 +415,16 @@ function drawFooter(doc, exam, pageNumber) {
   );
 }
 
-function drawSectionHeading(doc, label, cursor) {
+function drawSectionHeading(doc, label, cursor, width = COLUMN_WIDTH) {
   const x = COLUMN_X[cursor.column];
 
   doc.font("Helvetica-Bold").fontSize(8.5).fillColor(COLORS.ink);
-  doc.text(label.toUpperCase(), x, cursor.y + 5, { width: COLUMN_WIDTH, lineBreak: false });
+  doc.text(label.toUpperCase(), x, cursor.y + 5, { width, lineBreak: false });
 
   const ruleY = cursor.y + SECTION_HEADING_HEIGHT - 5;
   doc
     .moveTo(x, ruleY)
-    .lineTo(x + COLUMN_WIDTH, ruleY)
+    .lineTo(x + width, ruleY)
     .strokeColor(COLORS.rule)
     .lineWidth(0.6)
     .stroke();

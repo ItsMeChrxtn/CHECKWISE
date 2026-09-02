@@ -37,6 +37,9 @@ const SECTION_HEADING =
   /^(?:(?:TEST|PART|SECTION)\s+[IVXLC\d]+|[IVXLC]{1,5}|[A-D])\s*[.:)-]\s*(.+)$/i;
 
 const DIRECTION_LINE = /^(?:direction|directions|instruction|instructions|panuto)\b/i;
+/** The label itself, so only what the teacher actually said is kept. */
+const DIRECTION_LABEL =
+  /^(?:direction|directions|instruction|instructions|panuto)s?\s*[:.\u2013\u2014-]?\s*/i;
 /** "(40 items, 1 point each)" - the marks each item in the section carries. */
 const ITEM_COUNT_HINT = /\((\d{1,3})\s*items?,\s*(\d{1,3})\s*points?\s*each\)/i;
 
@@ -164,7 +167,7 @@ function splitIntoSections(lines) {
   let current = null;
 
   const open = (label, type) => {
-    current = { label, type, points: 1, lines: [] };
+    current = { label, type, points: 1, directions: "", lines: [] };
     sections.push(current);
   };
 
@@ -185,6 +188,13 @@ function splitIntoSections(lines) {
       // The directions often declare what each item is worth.
       const hint = line.text.match(ITEM_COUNT_HINT);
       if (hint && current) current.points = Number(hint[2]) || 1;
+
+      // Kept, so the answer sheet can print the teacher's own wording instead
+      // of a generic sentence. Only the first directions line of a section is
+      // taken: anything running to a paragraph would not fit under a heading.
+      if (current && !current.directions) {
+        current.directions = line.text.replace(DIRECTION_LABEL, "").trim();
+      }
       continue;
     }
     if (current) {
@@ -312,6 +322,7 @@ function toQuestion(block, section, warnings) {
 
   const question = {
     section: section.label,
+    directions: section.directions || "",
     sectionNumber: block.sectionNumber,
     questionType: type,
     questionText: questionText.slice(0, MAX_TEXT),
@@ -411,6 +422,7 @@ function parseNumberedBlanks(section) {
     for (const [, number, answer] of line.text.matchAll(NUMBERED_BLANK)) {
       questions.push({
         section: section.label,
+        directions: section.directions || "",
         sectionNumber: Number(number),
         questionType: "fill-in-the-blanks",
         // Show the code line with this blank left empty, as the student sees it.
