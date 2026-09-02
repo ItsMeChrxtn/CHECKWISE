@@ -56,14 +56,14 @@ export async function readScan(key, layout, pageNumber = null) {
   }
 
   const pages = path.extname(key).toLowerCase() === ".pdf"
-    ? await rasterisePdf(key)
-    : [toGrayscale(await load(key))];
+    ? (await rasterisePdf(key)).map((grey) => ({ work: grey, full: grey, scale: 1 }))
+    : [photoPage(await load(key))];
 
   const readings = [];
-  for (const grey of pages) {
+  for (const image of pages) {
     // A forced page number can only mean anything for a single image; a
     // multi-page PDF must let each page identify itself.
-    readings.push(analyse(grey, layout, pages.length === 1 ? pageNumber : null));
+    readings.push(analyse(image, layout, pages.length === 1 ? pageNumber : null));
   }
   return readings;
 }
@@ -72,7 +72,11 @@ export async function readScan(key, layout, pageNumber = null) {
  * Reads one page image. Kept separate from loading so a photo and a rasterised
  * PDF page take exactly the same path through the reader.
  */
-function analyse(grey, layout, pageNumber = null) {
+function analyse(image, layout, pageNumber = null) {
+  // Marks come off the small copy - a bubble is enormous beside a pen stroke,
+  // and the search is quicker for it. Handwriting is cropped further down from
+  // the original, where the detail still exists.
+  const grey = image.work;
   const markers = findMarkers(grey, layout);
   const transform = solveProjection(layout.markers, markers);
   const threshold = otsu(grey);
@@ -123,7 +127,7 @@ function analyse(grey, layout, pageNumber = null) {
   return {
     marks,
     page,
-    crops: cropWriteIns(grey, layout, page, transform),
+    crops: cropWriteIns(image, layout, page, transform),
     diagnostics: {
       imageSize: { width: grey.width, height: grey.height },
       markers,
@@ -141,6 +145,8 @@ const WRITE_IN_ABOVE = 17;
 const WRITE_IN_BELOW = 4;
 /** Pixels per sheet point in a crop - enough for handwriting to stay legible. */
 const CROP_SCALE = 3;
+/** ...and the most worth drawing, past which the PNG grows for nothing. */
+const CROP_SCALE_MAX = 8;
 
 /**
  * Cuts out what the student wrote on each ruled line, straightened.
@@ -151,35 +157,47 @@ const CROP_SCALE = 3;
  * person reviewing the paper, and it is the form any handwriting reader would
  * want if one is added.
  */
-function cropWriteIns(grey, layout, page, transform) {
+function cropWriteIns(image, layout, page, transform) {
   const lines = (layout.writeIns ?? []).filter((line) => (line.page ?? 1) === page);
   if (lines.length === 0) return [];
 
   const inverse = invert3x3(transform);
   if (!inverse) return [];
 
+  // Sampled from the full-size photo. `transform` maps the sheet onto the
+  // working copy, so every projected point is scaled up to match.
+  const grey = image.full;
+  const zoom = image.scale;
   const threshold = otsu(grey);
+
+  // Drawn at the detail the photo actually holds. Fixed at three pixels per
+  // point, this threw away most of a phone photo and then enlarged what was
+  // left, which is what turned "useState" into "usoState H THE".
+  const cropScale = Math.max(
+    CROP_SCALE,
+    Math.min(CROP_SCALE_MAX, Math.round(scaleOf(transform, layout) * zoom))
+  );
 
   return lines.map((line) => {
     const height = WRITE_IN_ABOVE + WRITE_IN_BELOW;
-    const width = Math.round(line.width * CROP_SCALE);
-    const canvas = createCanvas(width, Math.round(height * CROP_SCALE));
+    const width = Math.round(line.width * cropScale);
+    const canvas = createCanvas(width, Math.round(height * cropScale));
     const ctx = canvas.getContext("2d");
     const out = ctx.createImageData(canvas.width, canvas.height);
 
     // The bottom rows hold the printed rule itself; ink there is not an answer.
-    const ruleFrom = Math.round((WRITE_IN_ABOVE - 2) * CROP_SCALE);
+    const ruleFrom = Math.round((WRITE_IN_ABOVE - 2) * cropScale);
     let ink = 0;
     let counted = 0;
 
     for (let y = 0; y < canvas.height; y += 1) {
       // Sheet coordinates of this row of the crop.
-      const sheetY = line.y - WRITE_IN_ABOVE + y / CROP_SCALE;
+      const sheetY = line.y - WRITE_IN_ABOVE + y / cropScale;
       for (let x = 0; x < canvas.width; x += 1) {
-        const sheetX = line.x + x / CROP_SCALE;
+        const sheetX = line.x + x / cropScale;
         const [px, py] = project(transform, sheetX, sheetY);
 
-        const value = sample(grey, px, py);
+        const value = sample(grey, px * zoom, py * zoom);
         if (y < ruleFrom) {
           counted += 1;
           if (value < threshold) ink += 1;
@@ -335,6 +353,28 @@ function canvasToGrayscale(ctx, width, height) {
 }
 
 /** A plain {width,height,data} luminance buffer - faster than per-pixel Jimp calls. */
+/**
+ * One photographed page, at both the sizes the reader needs.
+ *
+ * Finding markers and bubbles wants a small image; reading handwriting wants
+ * every pixel the camera took. A phone photo is around 4000px across and the
+ * working copy is 1200, so cropping from the working copy was discarding some
+ * nine tenths of the detail before the writing was ever looked at.
+ */
+function photoPage(image) {
+  const full = bitmapToGrayscale(image.bitmap);
+  const work = toGrayscale(image);
+  return { work, full, scale: full.width / work.width };
+}
+
+function bitmapToGrayscale({ width, height, data }) {
+  const grey = new Uint8Array(width * height);
+  for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+    grey[p] = (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
+  }
+  return { width, height, data: grey };
+}
+
 function toGrayscale(image) {
   const scale = Math.min(1, WORK_WIDTH / image.bitmap.width);
   const working = scale < 1 ? image.clone().resize({ w: Math.round(image.bitmap.width * scale) }) : image;
