@@ -71,6 +71,15 @@ const ROW = {
 };
 
 const SECTION_HEADING_HEIGHT = 22;
+/**
+ * Above this many items in the whole paper, the sheet runs in two columns.
+ *
+ * Fifteen fits comfortably down one column of a page, and a quiz that short
+ * looks wrong split in half - item 6 ends up beside item 1 to save space that
+ * was not short in the first place.
+ */
+const SINGLE_COLUMN_LIMIT = 15;
+
 /** Between the directions line and the first row under it. */
 const DIRECTIONS_GAP = 6;
 /**
@@ -163,6 +172,18 @@ export async function generateAnswerSheet(exam) {
   const questions = [...exam.questions].sort((a, b) => a.questionNumber - b.questionNumber);
 
   /*
+   * A short paper reads better down a single column.
+   *
+   * Two columns exist to stop a long section running off the bottom of the
+   * page; on a ten-item quiz they only make the sheet look half empty and put
+   * item 6 beside item 1 for no reason. The whole paper decides, not each
+   * section, so a quiz does not change shape halfway down.
+   */
+  const columns = questions.length > SINGLE_COLUMN_LIMIT ? 2 : 1;
+  const columnWidth = columns === 2 ? COLUMN_WIDTH : CONTENT.right - CONTENT.left;
+  cursor.width = columnWidth;
+
+  /*
    * A section is laid out as one block, not as a stream.
    *
    * Numbers used to run down the left column until it was full and then carry on
@@ -181,16 +202,16 @@ export async function generateAnswerSheet(exam) {
         ? SECTION_HEADING_HEIGHT + directionsHeight(doc, group)
         : 0;
 
-      let plan = planBlock(remaining, CONTENT.bottom - (cursor.y + heading));
+      let plan = planBlock(remaining, CONTENT.bottom - (cursor.y + heading), columns);
 
       // Nothing fits here. If a fresh page would hold the whole section, start
       // one rather than tearing two items off the end of this page.
       if (!plan || (!continued && plan.take < remaining.length)) {
         const fresh = CONTENT.bottom - (PAGE.margin + MARKER + 12 + heading);
-        const whole = planBlock(remaining, fresh);
+        const whole = planBlock(remaining, fresh, columns);
         if (!plan || (whole && whole.take > plan.take)) {
           startPage(false);
-          plan = planBlock(remaining, CONTENT.bottom - (cursor.y + heading));
+          plan = planBlock(remaining, CONTENT.bottom - (cursor.y + heading), columns);
         }
       }
 
@@ -218,9 +239,11 @@ export async function generateAnswerSheet(exam) {
       for (const question of left) cursor.y = drawQuestionRow(doc, question, cursor, layout);
       const leftBottom = cursor.y;
 
-      cursor.column = 1;
-      cursor.y = top;
-      for (const question of right) cursor.y = drawQuestionRow(doc, question, cursor, layout);
+      if (right.length > 0) {
+        cursor.column = 1;
+        cursor.y = top;
+        for (const question of right) cursor.y = drawQuestionRow(doc, question, cursor, layout);
+      }
 
       cursor.column = 0;
       cursor.y = Math.max(leftBottom, cursor.y) + SECTION_GAP;
@@ -265,17 +288,22 @@ function groupBySection(questions) {
 }
 
 /**
- * The longest run of these items that fits in two columns of `available`
- * height, divided as evenly as the row heights allow.
+ * The longest run of these items that fits in `columns` columns of
+ * `available` height, divided as evenly as the row heights allow.
  *
  * Rows are not all the same height - a modified true-or-false item carries a
  * correction line, an enumeration several - so the split is measured rather
  * than assumed to be the halfway index.
  */
-function planBlock(items, available) {
+function planBlock(items, available, columns = 2) {
   if (available <= 0) return null;
 
   for (let take = items.length; take > 0; take -= 1) {
+    if (columns === 1) {
+      if (totalHeight(items.slice(0, take)) <= available) return { take, leftCount: take };
+      continue;
+    }
+
     const leftCount = Math.ceil(take / 2);
     const left = totalHeight(items.slice(0, leftCount));
     const right = totalHeight(items.slice(leftCount, take));
@@ -452,7 +480,9 @@ function rowHeight(question) {
 function drawQuestionRow(doc, question, cursor, layout) {
   const x = COLUMN_X[cursor.column];
   const y = cursor.y;
-  const rightEdge = x + COLUMN_WIDTH;
+  // A short quiz runs in one column across the whole sheet, so the ruled
+  // lines have to follow the column rather than assume half the page.
+  const rightEdge = x + (cursor.width ?? COLUMN_WIDTH);
 
   /** Records a bubble so the scanner knows exactly where to look for it. */
   const noteBubble = (value, centreX, centreY) => {
