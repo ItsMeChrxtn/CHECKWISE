@@ -30,10 +30,23 @@ function resolveApiBase() {
 
 const API_BASE = resolveApiBase();
 
+/**
+ * Long enough for a sleeping server to wake up.
+ *
+ * The API is on a free tier that suspends after a quiet spell, and the first
+ * request back takes about half a minute while it starts. At 30s this timed out
+ * a second or two before the server answered, so the first thing anyone did
+ * after a quiet morning failed — and told them the server was down when it was
+ * in the middle of coming up.
+ *
+ * 90s matches the mobile client, which was raised for this same reason.
+ */
+const WAKE_TIMEOUT = 90000;
+
 const api = axios.create({
   baseURL: API_BASE,
   headers: { "Content-Type": "application/json" },
-  timeout: 30000,
+  timeout: WAKE_TIMEOUT,
 });
 
 /**
@@ -74,11 +87,15 @@ api.interceptors.response.use(
     let message =
       data?.message ||
       (status === 0
-        ? "Cannot reach the CheckWise server. Check that it is running."
+        ? "Cannot reach the CheckWise server. Check your connection and try again."
         : "Something went wrong. Please try again.");
 
+    // Saying the server is down is usually wrong. On a free tier the far more
+    // likely story is that it went to sleep and is on its way back, and being
+    // told to try once more is more use than being told to go and check it.
     if (error.code === "ECONNABORTED") {
-      message = "The request timed out. Please try again.";
+      message =
+        "The server took too long to answer. It may have been asleep — try that again.";
     }
 
     // An expired or invalid session: clear it so the router redirects to login.
