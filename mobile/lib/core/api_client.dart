@@ -219,9 +219,14 @@ class ApiClient {
       }
     }
 
+    // The address is named because it is the one thing worth seeing here: a
+    // build pointed at the wrong host looks exactly like a server that is down,
+    // and that is precisely how two releases shipped aimed at an emulator.
+    // Settings no longer offers a way to change it, so it is no longer offered
+    // as advice.
     final unreachable =
-        'Cannot reach the CheckWise server at ${ApiConfig.baseUrl}. Check that '
-        'it is running, and that the address in Settings is right.';
+        'Cannot reach the CheckWise server at ${ApiConfig.baseUrl}. '
+        'Check your connection and try again.';
 
     // A timeout on a free-tier host usually means it was asleep, not broken.
     // Saying so turns a dead end into "wait and press it again".

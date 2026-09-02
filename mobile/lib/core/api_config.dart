@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Where the CheckWise API lives, and how that survives a restart.
@@ -11,19 +13,39 @@ import 'package:shared_preferences/shared_preferences.dart';
 abstract final class ApiConfig {
   static const _key = 'checkwise.apiBaseUrl';
 
-  /// Overridable at build time:
+  /// Where a published build points, unless told otherwise.
+  ///
+  /// The origin only - the client appends `/api` itself, so a value ending in
+  /// `/api` would ask for `/api/api` and every request would 404.
+  static const productionBaseUrl = 'https://checkwise-b5ui.onrender.com';
+
+  /// Overridable at build time, for pointing a build at a server on the LAN:
   /// `--dart-define=CHECKWISE_API_URL=http://192.168.1.5:5000`.
+  ///
+  /// The name has to match exactly. It silently reads as empty otherwise, which
+  /// is how two releases went out pointing at an emulator address that means
+  /// nothing on a real phone.
   static const _compileTime = String.fromEnvironment('CHECKWISE_API_URL');
 
   static String _baseUrl = defaultBaseUrl();
 
   static String get baseUrl => _baseUrl;
 
+  /// A release build points at the deployed API; a debug build points at your
+  /// machine.
+  ///
+  /// Which way round this falls used to depend on remembering a --dart-define
+  /// on every release build, and forgetting it produced an installable app that
+  /// could not reach anything - the address it fell back to only exists inside
+  /// the emulator. Tying it to the build mode means a published APK cannot be
+  /// wrong by omission.
+  ///
   /// The Android emulator reaches the host machine on 10.0.2.2 — 127.0.0.1
   /// there is the emulated device itself, which is the usual reason a freshly
-  /// installed build cannot see a server that is plainly running.
+  /// installed debug build cannot see a server that is plainly running.
   static String defaultBaseUrl() {
     if (_compileTime.isNotEmpty) return _compileTime;
+    if (kReleaseMode) return productionBaseUrl;
     if (Platform.isAndroid) return 'http://10.0.2.2:5000';
     return 'http://localhost:5000';
   }
