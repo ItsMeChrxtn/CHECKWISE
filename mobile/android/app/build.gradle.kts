@@ -19,7 +19,11 @@ android {
         applicationId = "com.checkwise.checkwise_mobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Android 10. Flutter would settle for API 24, but the scanner leans on
+        // camera behaviour that is only dependable on newer releases, and every
+        // phone this is meant for is well past it. Claiming support that has not
+        // been tested is worse than asking for a newer phone.
+        minSdk = 29
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)

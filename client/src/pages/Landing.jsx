@@ -104,7 +104,7 @@ const ANDROID_BUILD = {
   file: "https://github.com/ItsMeChrxtn/CHECKWISE/releases/latest/download/checkwise.apk",
   version: "0.2.0",
   size: "55.2 MB",
-  minAndroid: "7.0",
+  minAndroid: "10",
 };
 
 export default function Landing() {
