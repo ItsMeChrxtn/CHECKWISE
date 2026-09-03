@@ -18,6 +18,7 @@
  */
 const fs = require("fs");
 const path = require("path");
+const zlib = require("node:zlib");
 const { createCanvas } = require("../../server/node_modules/@napi-rs/canvas");
 
 const BRAND = "#3A5BB0";
@@ -130,7 +131,96 @@ function renderStoreIcon() {
   return c.toBuffer("image/png");
 }
 
+/**
+ * iOS icon, at whatever pixel size the asset catalogue asks for.
+ *
+ * Two rules Android does not have: the image must be fully opaque, because an
+ * alpha channel is rejected at submission, and it must be a plain square,
+ * because iOS applies its own rounded mask. Drawing our own corners here would
+ * show up as a dark ring inside the one Apple draws.
+ */
+function renderIosIcon(size) {
+  const c = createCanvas(size, size);
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = BRAND;
+  ctx.fillRect(0, 0, size, size);
+  drawMark(ctx, size / 2, size / 2, size * 0.62, "#FFFFFF");
+  return opaquePng(ctx, size);
+}
+
+/**
+ * Encodes the canvas as a PNG with no alpha channel.
+ *
+ * The canvas library always writes RGBA, and App Store submission rejects an
+ * icon that carries transparency even when every pixel in it is opaque. So the
+ * pixels are re-encoded here as PNG colour type 2 - twenty lines against a
+ * dependency, and it removes a rejection that would only be discovered at
+ * upload time.
+ */
+function opaquePng(ctx, size) {
+  const { data } = ctx.getImageData(0, 0, size, size);
+
+  // Each scanline is a filter byte (0, none) followed by RGB triples.
+  const raw = Buffer.alloc(size * (1 + size * 3));
+  let at = 0;
+  for (let y = 0; y < size; y += 1) {
+    raw[at++] = 0;
+    for (let x = 0; x < size; x += 1) {
+      const p = (y * size + x) * 4;
+      raw[at++] = data[p];
+      raw[at++] = data[p + 1];
+      raw[at++] = data[p + 2];
+    }
+  }
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // colour type 2: truecolour, no alpha
+
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(raw, { level: 9 })),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+function chunk(type, body) {
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(body.length, 0);
+
+  const typed = Buffer.concat([Buffer.from(type, "ascii"), body]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(zlib.crc32(typed), 0);
+
+  return Buffer.concat([length, typed, crc]);
+}
+
 let written = 0;
+
+// The asset catalogue already lists every size Xcode wants, so it is read here
+// rather than kept as a second list that could drift out of step with it.
+const ICONSET = path.join(
+  __dirname,
+  "..",
+  "ios",
+  "Runner",
+  "Assets.xcassets",
+  "AppIcon.appiconset"
+);
+if (fs.existsSync(path.join(ICONSET, "Contents.json"))) {
+  const catalogue = JSON.parse(fs.readFileSync(path.join(ICONSET, "Contents.json"), "utf8"));
+  const seen = new Set();
+  for (const image of catalogue.images) {
+    if (!image.filename || seen.has(image.filename)) continue;
+    seen.add(image.filename);
+    const px = Math.round(parseFloat(image.size) * parseInt(image.scale, 10));
+    fs.writeFileSync(path.join(ICONSET, image.filename), renderIosIcon(px));
+    written += 1;
+  }
+}
 for (const [density, size] of Object.entries(LEGACY)) {
   const dir = path.join(RES, `mipmap-${density}`);
   fs.mkdirSync(dir, { recursive: true });

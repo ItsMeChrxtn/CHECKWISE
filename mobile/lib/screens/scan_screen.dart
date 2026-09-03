@@ -126,7 +126,11 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
         back,
         ResolutionPreset.veryHigh,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.yuv420,
+        // Each platform native format, so the plugin converts nothing on the
+        // way: Android hands over a YUV frame whose first plane is already the
+        // luminance the reader wants, iOS hands over BGRA. _toGrey reads both.
+        imageFormatGroup:
+            Platform.isIOS ? ImageFormatGroup.bgra8888 : ImageFormatGroup.yuv420,
       );
 
       final ready = controller.initialize();

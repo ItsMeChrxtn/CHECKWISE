@@ -1,0 +1,61 @@
+# Builds the iOS app on a macOS runner.
+#
+# iOS cannot be compiled anywhere but macOS, and this project is developed on
+# Windows - so without this there is no way to know whether an iOS change even
+# compiles until someone borrows a Mac. GitHub lends one per run.
+#
+# The build is unsigned. That is enough to prove the project configures and
+# compiles, and to produce something a person with an Apple developer account
+# can sign; it is not enough to install on a phone by itself. Signing needs a
+# certificate and a provisioning profile, which are the account holder's to add.
+name: iOS build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "mobile/**"
+  # So it can be run by hand from the Actions tab without pushing anything.
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # Pinned to what the app is developed against, so a Flutter release
+          # cannot break the build on a day nobody touched the code.
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+
+      - name: Fetch packages
+        working-directory: mobile
+        run: flutter pub get
+
+      - name: Analyse
+        working-directory: mobile
+        run: flutter analyze
+
+      - name: Test
+        working-directory: mobile
+        run: flutter test
+
+      - name: Build (unsigned)
+        working-directory: mobile
+        run: flutter build ios --release --no-codesign
+
+      - name: Keep the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkwise-ios-unsigned
+          path: mobile/build/ios/iphoneos/Runner.app
+          if-no-files-found: error
