@@ -203,7 +203,7 @@ export default function CameraScanner({ exam, onScored, onClose }) {
     // Above the install hint and the tab bar, both of which are fixed to the
     // bottom of the screen and would otherwise sit on the viewfinder - which is
     // the one thing on this screen that has to be seen.
-    <div className="fixed inset-0 z-[60] flex flex-col bg-ink-900 lg:relative lg:z-auto lg:block lg:overflow-hidden lg:rounded-xl lg:border lg:border-ink-200">
+    <div className="fixed inset-0 z-[60] flex h-[100dvh] flex-col bg-ink-900 lg:relative lg:z-auto lg:block lg:h-auto lg:overflow-hidden lg:rounded-xl lg:border lg:border-ink-200">
       <div className="relative min-h-0 flex-1 bg-black lg:aspect-[4/3] lg:w-full lg:flex-none">
         <video
           ref={videoRef}
