@@ -1,6 +1,7 @@
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import { ToastProvider } from "./context/ToastContext.jsx";
+import InstallHint from "./components/InstallHint.jsx";
 import Toaster from "./components/Toaster.jsx";
 import ProtectedRoute, { PublicOnlyRoute } from "./components/ProtectedRoute.jsx";
 import AuthLayout from "./layouts/AuthLayout.jsx";
@@ -129,6 +130,7 @@ export default function App() {
       <AuthProvider>
         <RouterProvider router={router} />
         <Toaster />
+        <InstallHint />
       </AuthProvider>
     </ToastProvider>
   );

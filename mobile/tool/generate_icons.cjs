@@ -1,5 +1,6 @@
 /**
- * Renders the CheckWise app icon at every density Android asks for.
+ * Renders the CheckWise app icon everywhere it is needed: Android, iOS, and
+ * the website, which installs to a home screen as a progressive web app.
  *
  * Run from the repo root:
  *   node mobile/tool/generate_icons.cjs
@@ -198,7 +199,40 @@ function chunk(type, body) {
   return Buffer.concat([length, typed, crc]);
 }
 
+/**
+ * Home-screen icon for the installed website.
+ *
+ * `maskable` pads the glyph into the middle 60% of the canvas. Android crops
+ * an installed icon to whatever shape the launcher uses - circle, squircle,
+ * teardrop - and anything outside that safe area is cut, so a full-bleed mark
+ * loses its edges. The unpadded version is kept too, for the browsers that
+ * show the icon as drawn.
+ */
+function renderWebIcon(size, maskable) {
+  const c = createCanvas(size, size);
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = BRAND;
+  ctx.fillRect(0, 0, size, size);
+  drawMark(ctx, size / 2, size / 2, size * (maskable ? 0.42 : 0.62), "#FFFFFF");
+  return opaquePng(ctx, size);
+}
+
 let written = 0;
+
+// The website reads these straight out of client/public.
+const WEB = path.join(__dirname, "..", "..", "client", "public");
+fs.mkdirSync(WEB, { recursive: true });
+for (const [name, size, maskable] of [
+  ["icon-192.png", 192, false],
+  ["icon-512.png", 512, false],
+  ["icon-maskable-512.png", 512, true],
+  // iOS applies its own rounded corners and refuses transparency, so this is
+  // the same square, opaque artwork at the size Safari asks for.
+  ["apple-touch-icon.png", 180, false],
+]) {
+  fs.writeFileSync(path.join(WEB, name), renderWebIcon(size, maskable));
+  written += 1;
+}
 
 // The asset catalogue already lists every size Xcode wants, so it is read here
 // rather than kept as a second list that could drift out of step with it.

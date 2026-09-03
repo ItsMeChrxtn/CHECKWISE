@@ -2,7 +2,10 @@
 <html lang="en" class="h-full">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <meta
       name="description"
       content="CheckWise Smart Exam Checking System - scan, grade and report exam answer sheets automatically."
@@ -12,6 +15,26 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233a5bb0'/%3E%3Cpath d='M23.4 11.2A9 9 0 1 0 25 16' stroke='white' stroke-opacity='.55' stroke-width='2.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M11.2 16.4 15 20.2 24.4 10.4' stroke='white' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E"
     />
+    <!--
+      Installed to a home screen, the site runs as an app: no address bar, its
+      own icon, its own entry in the task switcher. That is the whole of what
+      iOS allows without a paid developer account, and it is enough - the
+      scanner here uses the browser camera, so an iPhone gets the real thing.
+
+      Android reads the manifest. iOS ignores most of it and wants the three
+      apple-* tags instead, which is why both are here.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="CheckWise" />
+    <!-- The status bar draws over the page, so the header colours it. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!--
+      White while the browser chrome is visible, because the landing page is
+      white; the installed app paints its own header under the status bar.
+    -->
     <meta name="theme-color" content="#ffffff" />
 
     <!--

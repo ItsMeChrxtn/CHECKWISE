@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Camera, Check, ChevronDown, ScanLine, Trash2, TriangleAlert, Video } from "lucide-react";
 import Button from "./Button.jsx";
 import CameraScanner from "./CameraScanner.jsx";
@@ -389,7 +389,8 @@ function ResultReview({ resultId, onSaved }) {
           </thead>
           <tbody className="divide-y divide-ink-100">
             {result.answers.map((answer) => (
-              <tr key={answer.questionNumber}>
+              <Fragment key={answer.questionNumber}>
+              <tr>
                 <td className="px-3 py-1.5 text-ink-600">
                   {answer.section ? `${shortSection(answer.section)} ` : ""}
                   {answer.sectionNumber ?? answer.questionNumber}
@@ -422,6 +423,24 @@ function ResultReview({ resultId, onSaved }) {
                   {answer.pointsEarned}/{answer.pointsPossible}
                 </td>
               </tr>
+
+              {/*
+                The strip of the paper, across the full table so the writing is
+                big enough to read. Squeezed into one cell of five it would be a
+                few pixels tall and would settle nothing.
+              */}
+              {answer.writeInCrop && (
+                <tr>
+                  <td colSpan={5} className="px-3 pb-2">
+                    <img
+                      src={fileUrl(`/uploads/${answer.writeInCrop}`)}
+                      alt={`What the student wrote for item ${answer.sectionNumber ?? answer.questionNumber}`}
+                      className="w-full rounded border border-ink-200 bg-white"
+                    />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
