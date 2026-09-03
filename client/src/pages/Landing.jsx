@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import InstallHint from "../components/InstallHint.jsx";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -120,6 +121,7 @@ export default function Landing() {
       <MobileApp />
       <ClosingCta isAuthenticated={isAuthenticated} />
       <SiteFooter />
+      <InstallHint />
     </div>
   );
 }

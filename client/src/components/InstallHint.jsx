@@ -19,9 +19,13 @@ const DISMISSED = "checkwise.installHintDismissed";
  * the right answer here.
  *
  * Shown on phones only, once, and never again after it is dismissed or the app
- * is opened from the home screen.
+ * is opened from the home screen. It is mounted by the screens that can spare
+ * the room - never over a form, because a banner that covers the sign-in
+ * button is worse than no banner at all.
+ *
+ * `aboveTabBar` lifts it clear of the bottom navigation, which is fixed too.
  */
-export default function InstallHint() {
+export default function InstallHint({ aboveTabBar = false }) {
   const [prompt, setPrompt] = useState(null);
   const [showIos, setShowIos] = useState(false);
   const [gone, setGone] = useState(true);
@@ -84,11 +88,15 @@ export default function InstallHint() {
 
   if (gone) return null;
 
-  // Sits clear of the bottom tab bar, which is fixed too and would otherwise be
-  // covered by this - labels and all, on the one screen where someone is still
-  // finding their way around.
   return (
-    <div className="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-50 rounded-xl border border-ink-200 bg-white p-4 shadow-lg lg:bottom-3">
+    <div
+      className={[
+        "fixed inset-x-3 z-50 rounded-xl border border-ink-200 bg-white p-4 shadow-lg",
+        aboveTabBar
+          ? "bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-3"
+          : "bottom-[max(0.75rem,env(safe-area-inset-bottom))]",
+      ].join(" ")}
+    >
       <div className="flex items-start gap-3">
         <img src="/icon-192.png" alt="" className="h-10 w-10 shrink-0 rounded-lg" />
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Outlet, useLocation, useMatches } from "react-router-dom";
+import InstallHint from "../components/InstallHint.jsx";
 import MobileTabBar from "../components/MobileTabBar.jsx";
 import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
@@ -35,6 +36,7 @@ export default function DashboardLayout() {
       </div>
 
       <MobileTabBar isAdmin={isAdmin} />
+      <InstallHint aboveTabBar />
     </div>
   );
 }
