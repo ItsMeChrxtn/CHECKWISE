@@ -200,8 +200,8 @@ export default function CameraScanner({ exam, onScored, onClose }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-ink-200 bg-ink-900">
-      <div className="relative aspect-[4/3] w-full bg-black">
+    <div className="fixed inset-0 z-50 flex flex-col bg-ink-900 lg:relative lg:z-auto lg:block lg:overflow-hidden lg:rounded-xl lg:border lg:border-ink-200">
+      <div className="relative min-h-0 flex-1 bg-black lg:aspect-[4/3] lg:w-full lg:flex-none">
         <video
           ref={videoRef}
           playsInline
@@ -258,7 +258,7 @@ export default function CameraScanner({ exam, onScored, onClose }) {
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-3 px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:pb-3">
         <p className="text-xs text-ink-300">
           {totalPages > 1
             ? `${captured.length} of ${totalPages} pages captured${captured.length ? ` (${captured.join(", ")})` : ""}`
