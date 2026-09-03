@@ -84,8 +84,11 @@ export default function InstallHint() {
 
   if (gone) return null;
 
+  // Sits clear of the bottom tab bar, which is fixed too and would otherwise be
+  // covered by this - labels and all, on the one screen where someone is still
+  // finding their way around.
   return (
-    <div className="fixed inset-x-3 bottom-3 z-50 rounded-xl border border-ink-200 bg-white p-4 shadow-lg">
+    <div className="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-50 rounded-xl border border-ink-200 bg-white p-4 shadow-lg lg:bottom-3">
       <div className="flex items-start gap-3">
         <img src="/icon-192.png" alt="" className="h-10 w-10 shrink-0 rounded-lg" />
 
