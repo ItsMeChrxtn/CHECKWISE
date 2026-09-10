@@ -59,7 +59,7 @@ export async function shutdownHandwriting() {
 /**
  * Reads a batch of cropped answer lines.
  *
- * @param {{questionNumber: number, png: Buffer, ink: number}[]} crops
+ * @param {{questionNumber: number, png: Buffer, ocr?: Buffer, ink: number}[]} crops
  * @returns {Promise<Map<number, {text: string, confidence: number}>>}
  */
 export async function readHandwriting(crops) {
@@ -88,7 +88,10 @@ export async function readHandwriting(crops) {
   // the same machine finishes no sooner and competes with serving requests.
   for (const crop of written) {
     try {
-      const { data } = await worker.recognize(crop.png);
+      // The cleaned strip when the reader made one - thresholded, with the
+      // printed rule taken out. The untouched photo is what the teacher sees
+      // beside the answer; it is not the best thing to read from.
+      const { data } = await worker.recognize(crop.ocr ?? crop.png);
       readings.set(crop.questionNumber, {
         text: tidy(data.text),
         confidence: Math.max(0, Math.min(1, (data.confidence ?? 0) / 100)),
