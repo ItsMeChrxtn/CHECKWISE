@@ -61,9 +61,31 @@ export async function readScan(key, layout, pageNumber = null) {
 
   const readings = [];
   for (const image of pages) {
-    // A forced page number can only mean anything for a single image; a
-    // multi-page PDF must let each page identify itself.
-    readings.push(analyse(image, layout, pages.length === 1 ? pageNumber : null));
+    /*
+     * One photo can hold more than one page. A two-page sheet laid open on a
+     * desk is the natural way to photograph it, and reading only the first
+     * page of that photo - which is what happened before - silently scored the
+     * paper with half its answers missing.
+     */
+    const quads = findMarkerQuads(image.work, layout);
+
+    // A forced page number can only mean anything for one page in one image;
+    // anything more must let each page identify itself.
+    const forced = pages.length === 1 && quads.length === 1 ? pageNumber : null;
+
+    const before = readings.length;
+    let unnamed = null;
+    for (const quad of quads) {
+      try {
+        readings.push(analyse(image, layout, quad, forced));
+      } catch (error) {
+        // Not a page after all - four bubbles that happened to line up. It
+        // is only a failure if nothing in the photo turned out to be a page.
+        if (error.code !== "page-unknown") throw error;
+        unnamed = error;
+      }
+    }
+    if (readings.length === before && unnamed) throw unnamed;
   }
   return readings;
 }
@@ -72,12 +94,11 @@ export async function readScan(key, layout, pageNumber = null) {
  * Reads one page image. Kept separate from loading so a photo and a rasterised
  * PDF page take exactly the same path through the reader.
  */
-function analyse(image, layout, pageNumber = null) {
+function analyse(image, layout, markers, pageNumber = null) {
   // Marks come off the small copy - a bubble is enormous beside a pen stroke,
   // and the search is quicker for it. Handwriting is cropped further down from
   // the original, where the detail still exists.
   const grey = image.work;
-  const markers = findMarkers(grey, layout);
   const transform = solveProjection(layout.markers, markers);
   const threshold = otsu(grey);
 
@@ -548,16 +569,195 @@ function otsu(grey) {
  * fits a full projective transform - so this is the only place that ever needed
  * the paper to be square on.
  */
-function findMarkers(grey, layout) {
+/**
+ * Every page in the image, as the four marker centres of each.
+ *
+ * The best page-shaped set of markers is taken, its four blobs are removed
+ * from the pool, and the search runs again on what is left - until nothing
+ * page-shaped remains. Two pages side by side come back as two quads; one
+ * page comes back as one. Each is then read on its own.
+ */
+function findMarkerQuads(grey, layout) {
   const threshold = otsu(grey);
   const { width } = grey;
 
-  // What the marker would measure if the sheet filled the frame. Used only as a
-  // scale reference now: anything from a distant sheet up to a close one counts.
+  // What the marker would measure if one sheet filled the frame. Only a scale
+  // reference: two sheets in the frame make each marker about half this, and
+  // the blob filter's range is wide enough to keep them.
   const expected = (layout.markerSize / layout.pageSize.width) * width;
 
-  const quad = chooseMarkerQuad(collectDarkBlobs(grey, threshold, expected), layout);
-  if (quad) return quad;
+  const candidates = chooseMarkerQuad(collectDarkBlobs(grey, threshold, expected), layout);
+
+  /*
+   * Geometry alone cannot tell a page from four markers that merely look like
+   * one. Shaded bubbles pass the marker filter, and with two sheets in frame
+   * the top-left corners of both plus their bottom-left corners make a quad of
+   * perfectly page-like proportions - larger than either real page, so it wins
+   * on area every time.
+   *
+   * What a real page has that an impostor does not is its page-number squares,
+   * at a fixed place relative to its own corners. So every candidate is asked
+   * to name its page, and only the ones that can are kept: one per page number,
+   * the largest. The impostors project that position onto blank paper.
+   */
+  // Every candidate that passes, with which page it claims to be and how
+  // cleanly its scale fits. Judged all together rather than first-come: the
+  // largest quad in a two-sheet photo is often the impostor spanning both.
+  const verified = [];
+  let largest = null;
+  for (const candidate of candidates) {
+    const verdict = looksLikeAPage(grey, layout, candidate, threshold);
+    if (!verdict) continue;
+    if (!largest) largest = candidate;
+    if (verdict.page) verified.push({ points: candidate.points, page: verdict.page, fit: verdict.fit });
+  }
+
+  // Best fit first: the quad whose bubbles land on the most actual bubbles.
+  verified.sort((a, b) => b.fit - a.fit);
+
+  const byPage = new Map();
+  for (const v of verified) {
+    if (byPage.has(v.page)) continue;
+
+    // Four shaded bubbles inside a page already taken can pass every test and
+    // claim to be another page. They are that page's contents, not a new one.
+    const cx = v.points.reduce((sum, p) => sum + p[0], 0) / 4;
+    const cy = v.points.reduce((sum, p) => sum + p[1], 0) / 4;
+    let contained = false;
+    for (const taken of byPage.values()) {
+      if (insideQuad(cx, cy, taken)) {
+        contained = true;
+        break;
+      }
+    }
+    if (contained) continue;
+
+    byPage.set(v.page, v.points);
+    if (byPage.size >= pageCount(layout)) break;
+  }
+
+  if (byPage.size > 0) return [...byPage.values()];
+
+  // Nothing named itself. On a one-page sheet the marks are not needed - there
+  // is only one page it can be - so the largest candidate is taken as it is.
+  if (largest && pageCount(layout) === 1) return [largest.points];
+
+  return [findMarkersByPosition(grey, layout, threshold, expected)];
+}
+
+/**
+ * Whether this quad is really a page, by the signature only a page has.
+ *
+ * The page-number row is a run of filled squares followed by empty positions
+ * on blank paper: dark, dark, then light all the way to the end. A quad that
+ * is four bubbles, or two pages' corners, projects that row onto whatever
+ * happens to be there - and whatever happens to be there is never that exact
+ * pattern. readPageMark stops at the first empty square, which is right for
+ * counting but too lenient for judging; this checks the empties are empty.
+ *
+ * The second test is scale. The transform says how big a marker should be on
+ * this quad, and the blobs say how big they are. On a real page the two agree;
+ * on a quad stretched across two sheets the transform is a fifth too large.
+ */
+function looksLikeAPage(grey, layout, candidate, threshold) {
+  const transform = solveProjection(layout.markers, candidate.points);
+  if (!transform) return null;
+
+  const scale = scaleOf(transform, layout);
+  const impliedMarker = layout.markerSize * scale;
+  const actualMarker = candidate.blobs.reduce((sum, b) => sum + b.box, 0) / 4;
+  const ratio = impliedMarker / actualMarker;
+  if (ratio > MARKER_SCALE_TOLERANCE || ratio < 1 / MARKER_SCALE_TOLERANCE) return null;
+
+  const mark = layout.pageMark;
+  if (!mark) return { transform, page: null, fit: bubbleFit(grey, layout, transform, 1, scale, threshold) };
+
+  const sampleRadius = Math.max(2, layout.bubbleRadius * scale * 0.35);
+  let page = 0;
+  let ended = false;
+  for (let i = 0; i < mark.max; i += 1) {
+    const [px, py] = project(transform, mark.x + i * mark.spacing + mark.size / 2, mark.y);
+    const dark = darkFraction(grey, px, py, sampleRadius, threshold) >= 0.5;
+    if (!ended && dark) page += 1;
+    else if (!ended && !dark) ended = true;
+    else if (ended && dark) return null; // ink after the run: not a page-number row
+  }
+
+  if (page === 0) return null;
+
+  // The decisive test. The layout says where every bubble on this page is;
+  // on a real page the transform puts each of those on an actual bubble, and
+  // on an impostor it puts them on blank paper or the desk. Scale and aspect
+  // are proxies for this and each has a way to be fooled - the bounding box
+  // of a turned marker is wider than the marker, which alone was enough to
+  // make a quad across two tilted sheets look a better fit than either sheet.
+  const fit = bubbleFit(grey, layout, transform, page, scale, threshold);
+  if (fit < MIN_BUBBLE_FIT) return null;
+
+  return { transform, page, fit };
+}
+
+/**
+ * The share of this page's bubbles that the transform lands on ink.
+ *
+ * A bubble is a printed ring, shaded or not, so a disc a little wider than
+ * the bubble always finds some ink there: the whole thing when it is shaded,
+ * the ring when it is not. Blank paper finds none. Sampled at most forty
+ * bubbles, spread through the page, which is plenty to tell 0.95 from 0.2.
+ */
+function bubbleFit(grey, layout, transform, page, scale, threshold) {
+  const bubbles = layout.bubbles.filter((b) => (b.page ?? 1) === page);
+  if (bubbles.length === 0) return 1;
+
+  const step = Math.max(1, Math.floor(bubbles.length / 40));
+  const radius = layout.bubbleRadius * scale * 1.15;
+  let hit = 0;
+  let tried = 0;
+  for (let i = 0; i < bubbles.length; i += step) {
+    const [px, py] = project(transform, bubbles[i].x, bubbles[i].y);
+    tried += 1;
+    if (darkFraction(grey, px, py, radius, threshold) >= RING_INK) hit += 1;
+  }
+  return tried === 0 ? 1 : hit / tried;
+}
+
+/** Ink an unshaded bubble's ring leaves in a disc just wider than itself. */
+const RING_INK = 0.08;
+/**
+ * Below this share of bubbles found, the quad is not this page. A real page at
+ * the right transform scores close to 1; a quad one corner off scored 0.65,
+ * which is why the bar is not lower.
+ */
+const MIN_BUBBLE_FIT = 0.75;
+
+/** Whether a point lies inside a quad, by winding. */
+function insideQuad(x, y, quad) {
+  let inside = false;
+  for (let i = 0, j = 3; i < 4; j = i, i += 1) {
+    const [xi, yi] = quad[i];
+    const [xj, yj] = quad[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** How far a quad may depart from the sheet proportions and still be a page. */
+const ASPECT_TOLERANCE = 1.15;
+/**
+ * How far the transform and the blobs may disagree about marker size.
+ *
+ * Only a coarse sanity check now - the bubble fit below is what actually
+ * decides. It was 1.12 and rejected a real page turned four degrees, whose
+ * markers box seven percent wider than they are, by three thousandths.
+ */
+const MARKER_SCALE_TOLERANCE = 1.3;
+
+/** As many pages as it is worth looking for in one photo. */
+const MAX_PAGES_PER_PHOTO = 4;
+
+
+function findMarkersByPosition(grey, layout, threshold, expected) {
+  const { width } = grey;
 
   // Nothing page-shaped turned up. Fall back to the old fixed-position search,
   // which still rescues a clean flatbed scan whose markers are faint enough to
@@ -686,54 +886,115 @@ function chooseMarkerQuad(blobs, layout) {
   const [, my3] = layout.markers[3];
   const sheetAspect = Math.abs(mx1 - mx0) / Math.max(1, Math.abs(my3 - my1 || my3 - my0));
 
-  let best = null;
-  let bestScore = 0;
+  /*
+   * Candidates are tried four at a time, rather than taking the four extremes
+   * of a size group. Extremes only ever describe one quad per group, and when
+   * two pages sit side by side that quad is the outer corners of both - twice
+   * as wide as a page and useless. Enumerating the combinations lets a single
+   * page be found in the middle of a crowd, and the page-shape test throws the
+   * double-wide one out.
+   *
+   * The pool is small enough for this to be cheap: after the shape filter a
+   * photo has a few dozen marker-like blobs at most, and only same-size ones
+   * are combined.
+   */
+  const found = [];
 
-  for (const seed of blobs) {
-    const group = blobs.filter((b) => b.box >= seed.box * GROUP_LOW && b.box <= seed.box * GROUP_HIGH);
+  const sorted = [...blobs].sort((a, b) => a.box - b.box);
+
+  for (let i = 0; i < sorted.length; i += 1) {
+    const seed = sorted[i];
+    // Same-size candidates, taken from the sorted list so the window is contiguous.
+    const group = [];
+    for (let j = i; j < sorted.length && sorted[j].box <= seed.box * GROUP_HIGH; j += 1) {
+      group.push(sorted[j]);
+    }
     if (group.length < 4) continue;
 
-    const pick = (fn) => group.reduce((a, b) => (fn(b) < fn(a) ? b : a));
-    const tl = pick((b) => b.x + b.y);
-    const br = pick((b) => -(b.x + b.y));
-    const tr = pick((b) => -(b.x - b.y));
-    const bl = pick((b) => b.x - b.y);
-
-    const corners = [tl, tr, br, bl];
-    if (new Set(corners).size < 4) continue;
-
-    // The four markers are printed identically, so they must measure alike.
-    // Without this the page-number square along the bottom edge can slip into
-    // the group and win the bottom-left corner, which throws the whole fit.
-    const boxes = corners.map((c) => c.box);
-    if (Math.max(...boxes) / Math.min(...boxes) > MARKER_SIZE_SPREAD) continue;
-
-    const spanTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
-    const spanLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
-    if (spanTop < seed.box * 3 || spanLeft < seed.box * 3) continue;
-
-    // Shoelace area of the quad, and how close its shape is to the real sheet.
-    let area = 0;
-    for (let i = 0; i < 4; i += 1) {
-      const p = corners[i];
-      const q = corners[(i + 1) % 4];
-      area += p.x * q.y - q.x * p.y;
-    }
-    area = Math.abs(area) / 2;
-    if (area <= 0) continue;
-
-    const aspect = spanTop / spanLeft;
-    const aspectFit = 1 - Math.min(1, Math.abs(aspect - sheetAspect) / sheetAspect);
-    const shape = corners.reduce((sum, c) => sum + c.score, 0) / 4;
-    const score = area * aspectFit * shape;
-
-    if (score > bestScore) {
-      bestScore = score;
-      best = corners.map((c) => [c.x, c.y]);
+    for (let a = 0; a < group.length - 3; a += 1) {
+      for (let b = a + 1; b < group.length - 2; b += 1) {
+        for (let c = b + 1; c < group.length - 1; c += 1) {
+          for (let d = c + 1; d < group.length; d += 1) {
+            const four = [group[a], group[b], group[c], group[d]];
+            const quad = orderAsQuad(four, seed.box, sheetAspect);
+            if (quad) {
+              found.push({
+                points: quad.corners.map((k) => [k.x, k.y]),
+                blobs: quad.corners,
+                area: quad.area,
+              });
+            }
+          }
+        }
+      }
     }
   }
 
-  return best;
+  // Largest first. The same four blobs can be reached from more than one
+  // seed, so duplicates are dropped here rather than counted twice.
+  found.sort((a, b) => b.area - a.area);
+  const seen = new Set();
+  return found.filter((q) => {
+    const key = q.blobs
+      .map((k) => k.x + "," + k.y)
+      .sort()
+      .join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Four blobs as a page, or null when they do not make one.
+ *
+ * The corners are named by diagonal extremes, which is rotation-tolerant; then
+ * the shape is checked hard rather than scored soft. A quad that is not close
+ * to the sheet's own proportions is not a page, however large it is - and the
+ * largest wrong answer, two pages wide, is exactly the one that used to win.
+ */
+function orderAsQuad(four, box, sheetAspect) {
+  const pick = (fn) => four.reduce((p, q) => (fn(q) < fn(p) ? q : p));
+  const tl = pick((k) => k.x + k.y);
+  const br = pick((k) => -(k.x + k.y));
+  const tr = pick((k) => -(k.x - k.y));
+  const bl = pick((k) => k.x - k.y);
+  const corners = [tl, tr, br, bl];
+  if (new Set(corners).size < 4) return null;
+
+  // The four markers are printed identically, so they must measure alike.
+  const boxes = corners.map((k) => k.box);
+  if (Math.max(...boxes) / Math.min(...boxes) > MARKER_SIZE_SPREAD) return null;
+
+  const spanTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+  const spanLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+  const spanBottom = Math.hypot(br.x - bl.x, br.y - bl.y);
+  const spanRight = Math.hypot(br.x - tr.x, br.y - tr.y);
+  if (spanTop < box * 3 || spanLeft < box * 3) return null;
+
+  // Opposite sides of a page are the same length. A quad whose top is twice
+  // its bottom is three markers of one page and one of another.
+  if (spanTop / spanBottom > 1.25 || spanBottom / spanTop > 1.25) return null;
+  if (spanLeft / spanRight > 1.25 || spanRight / spanLeft > 1.25) return null;
+
+  let area = 0;
+  for (let i = 0; i < 4; i += 1) {
+    const p = corners[i];
+    const q = corners[(i + 1) % 4];
+    area += p.x * q.y - q.x * p.y;
+  }
+  area = Math.abs(area) / 2;
+  if (area <= 0) return null;
+
+  // Page-shaped, or not a page. The tolerance covers a sheet photographed up
+  // to about thirty degrees off square, which is as far as the bubbles stay
+  // readable anyway. It has to be this tight: the top-left and bottom-left
+  // corners of two sheets side by side make a quad only a fifth wider than a
+  // page, and a looser check let that through.
+  const aspect = spanTop / spanLeft;
+  if (aspect > sheetAspect * ASPECT_TOLERANCE || aspect < sheetAspect / ASPECT_TOLERANCE) return null;
+
+  return { corners, area };
 }
 
 function cornerName(index) {
