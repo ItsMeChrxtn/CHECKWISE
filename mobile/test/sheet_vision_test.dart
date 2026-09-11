@@ -15,9 +15,13 @@ final layout = SheetLayout.fromJson({
     [48, 744],
   ],
   'pageMark': {'x': 48, 'y': 770, 'size': 10, 'spacing': 16, 'max': 4},
+  'bubbleRadius': 6.5,
+  // Twenty rows of four on each page, where the printed sheet puts them.
   'bubbles': [
-    {'page': 1},
-    {'page': 2},
+    for (final page in [1, 2])
+      for (var row = 0; row < 20; row += 1)
+        for (var col = 0; col < 4; col += 1)
+          {'x': 110 + col * 30, 'y': 150 + row * 23, 'page': page},
   ],
 })!;
 
@@ -68,6 +72,13 @@ GreyFrame renderFrame({
         if ((sx - marker[0]).abs() <= half && (sy - marker[1]).abs() <= half) {
           value = 0;
         }
+      }
+
+      // Bubble rings, so the reader has something to check its fit against.
+      for (final b in layout.bubbles) {
+        if (b.page != pageNumber) continue;
+        final d = math.sqrt((sx - b.x) * (sx - b.x) + (sy - b.y) * (sy - b.y));
+        if ((d - layout.bubbleRadius).abs() <= 0.8) value = 40;
       }
 
       final mark = layout.pageMark!;
@@ -128,6 +139,23 @@ void main() {
       );
       expect(seen, isNotNull);
       expect(seen!.page, 2);
+    });
+
+    test('reads two pages laid side by side in one frame', () {
+      // Two sheets on a desk: page 1 on the left, page 2 on the right, each
+      // small enough that both fit, and each turned a little.
+      final left = renderFrame(scale: 0.36, rotateDegrees: -3, dx: -125, width: 520, height: 420);
+      final right = renderFrame(scale: 0.36, rotateDegrees: 4, dx: 125, width: 520, height: 420, pageNumber: 2);
+      final both = Uint8List(520 * 420);
+      for (var i = 0; i < both.length; i += 1) {
+        // Each frame is a page on the same grey desk. Where the left frame is
+        // still desk, the right one shows through - and the two pages do not
+        // overlap, so nothing is lost either way.
+        both[i] = left.data[i] == 160 ? right.data[i] : left.data[i];
+      }
+
+      final seen = findSheets(GreyFrame(520, 420, both), layout);
+      expect(seen.map((s) => s.page).toSet(), {1, 2});
     });
 
     test('finds nothing when no sheet is in frame', () {

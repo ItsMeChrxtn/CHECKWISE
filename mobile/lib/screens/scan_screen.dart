@@ -56,7 +56,7 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
 
   /// A sighting has to repeat before the shutter fires. One frame is enough
   /// to be a reflection or a half-turned page; two in a row is a sheet.
-  int? _pendingPage;
+  String? _pendingPages;
   int _pendingFrames = 0;
   bool _detecting = false;
   bool _streaming = false;
@@ -198,32 +198,41 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
     _detecting = true;
     try {
       final frame = _toGrey(image);
-      final seen = frame == null ? null : findSheet(frame, layout);
+      final seen = frame == null ? const <SheetSighting>[] : findSheets(frame, layout);
 
-      if (seen == null) {
-        _pendingPage = null;
+      if (seen.isEmpty) {
+        _pendingPages = null;
         _pendingFrames = 0;
         return;
       }
 
-      if (_capturedPages.contains(seen.page)) {
+      // Only the pages not already in hand. A frame showing both pages of a
+      // two-page sheet is photographed once and counts for both.
+      final fresh = seen
+          .map((s) => s.page)
+          .where((p) => !_capturedPages.contains(p))
+          .toList()
+        ..sort();
+
+      if (fresh.isEmpty) {
         _showHint(layout.pages > 1
-            ? 'Page ${seen.page} is already in. Show the next one.'
+            ? 'Page ${seen.first.page} is already in. Show the next one.'
             : 'Already caught. Show the next paper.');
         return;
       }
 
-      if (_pendingPage == seen.page) {
+      final key = fresh.join(',');
+      if (_pendingPages == key) {
         _pendingFrames += 1;
       } else {
-        _pendingPage = seen.page;
+        _pendingPages = key;
         _pendingFrames = 1;
       }
 
       if (_pendingFrames >= 2) {
-        _pendingPage = null;
+        _pendingPages = null;
         _pendingFrames = 0;
-        await _captureSheet(seen.page, layout);
+        await _captureSheet(fresh, layout);
       }
     } finally {
       _detecting = false;
@@ -232,7 +241,7 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
 
   /// Photographs the page the reader just recognised, and sends the paper once
   /// every page of the sheet is in.
-  Future<void> _captureSheet(int page, SheetLayout layout) async {
+  Future<void> _captureSheet(List<int> pages, SheetLayout layout) async {
     final camera = _camera;
     if (camera == null || !camera.value.isInitialized || _busy) return;
 
@@ -245,10 +254,10 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
 
       setState(() {
         _pages.add(File(shot.path));
-        _capturedPages.add(page);
+        _capturedPages.addAll(pages);
         _busy = false;
         _sheetHint = layout.pages > 1
-            ? 'Page $page caught — ${_capturedPages.length} of ${layout.pages}'
+            ? '${pages.length > 1 ? "Pages ${pages.join(" and ")}" : "Page ${pages.first}"} caught — ${_capturedPages.length} of ${layout.pages}'
             : 'Caught';
       });
 
