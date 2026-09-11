@@ -885,65 +885,88 @@ function chooseMarkerQuad(blobs, layout) {
   const [mx1, my1] = layout.markers[1];
   const [, my3] = layout.markers[3];
   const sheetAspect = Math.abs(mx1 - mx0) / Math.max(1, Math.abs(my3 - my1 || my3 - my0));
+  const found = [];
+  const seen = new Set();
 
   /*
-   * Candidates are tried four at a time, rather than taking the four extremes
-   * of a size group. Extremes only ever describe one quad per group, and when
-   * two pages sit side by side that quad is the outer corners of both - twice
-   * as wide as a page and useless. Enumerating the combinations lets a single
-   * page be found in the middle of a crowd, and the page-shape test throws the
-   * double-wide one out.
-   *
-   * The pool is small enough for this to be cheap: after the shape filter a
-   * photo has a few dozen marker-like blobs at most, and only same-size ones
-   * are combined.
+   * Rather than every four blobs - which is O(n^4) and took two minutes on a
+   * tilted two-sheet frame - each pair is tried as a page's top edge, and the
+   * bottom corners are looked for where that edge says they must be. The sheet
+   * is a known rectangle: given its top-left and top-right, the bottom two are
+   * a fixed distance straight down from each. Perspective bends that a little,
+   * so the search allows some slack, and orderAsQuad still checks the result.
    */
-  const found = [];
+  const tallness = 1 / sheetAspect;
 
-  const sorted = [...blobs].sort((a, b) => a.box - b.box);
+  for (const tl of blobs) {
+    for (const tr of blobs) {
+      if (tr === tl) continue;
+      // Same printed size, and tr to the right of tl by more than it is off level.
+      if (tr.box > tl.box * GROUP_HIGH || tl.box > tr.box * GROUP_HIGH) continue;
+      const dx = tr.x - tl.x;
+      const dy = tr.y - tl.y;
+      if (dx <= 0 || Math.abs(dy) > dx) continue;
 
-  for (let i = 0; i < sorted.length; i += 1) {
-    const seed = sorted[i];
-    // Same-size candidates, taken from the sorted list so the window is contiguous.
-    const group = [];
-    for (let j = i; j < sorted.length && sorted[j].box <= seed.box * GROUP_HIGH; j += 1) {
-      group.push(sorted[j]);
-    }
-    if (group.length < 4) continue;
+      const span = Math.hypot(dx, dy);
+      if (span < tl.box * 3) continue;
 
-    for (let a = 0; a < group.length - 3; a += 1) {
-      for (let b = a + 1; b < group.length - 2; b += 1) {
-        for (let c = b + 1; c < group.length - 1; c += 1) {
-          for (let d = c + 1; d < group.length; d += 1) {
-            const four = [group[a], group[b], group[c], group[d]];
-            const quad = orderAsQuad(four, seed.box, sheetAspect);
-            if (quad) {
-              found.push({
-                points: quad.corners.map((k) => [k.x, k.y]),
-                blobs: quad.corners,
-                area: quad.area,
-              });
-            }
-          }
-        }
-      }
+      // Down the page, perpendicular to the top edge.
+      const px = -dy / span;
+      const py = dx / span;
+      const drop = span * tallness;
+      const blX = tl.x + px * drop;
+      const blY = tl.y + py * drop;
+      const brX = tr.x + px * drop;
+      const brY = tr.y + py * drop;
+      const slack = span * CORNER_SLACK;
+
+      const bl = nearest(blobs, blX, blY, slack, tl.box);
+      const br = nearest(blobs, brX, brY, slack, tl.box);
+      if (!bl || !br || bl === br || bl === tl || bl === tr || br === tl || br === tr) continue;
+
+      const quad = orderAsQuad([tl, tr, br, bl], tl.box, sheetAspect);
+      if (!quad) continue;
+
+      const key = quad.corners.map((k) => k.x + "," + k.y).sort().join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      found.push({
+        points: quad.corners.map((k) => [k.x, k.y]),
+        blobs: quad.corners,
+        area: quad.area,
+      });
     }
   }
 
-  // Largest first. The same four blobs can be reached from more than one
-  // seed, so duplicates are dropped here rather than counted twice.
   found.sort((a, b) => b.area - a.area);
-  const seen = new Set();
-  return found.filter((q) => {
-    const key = q.blobs
-      .map((k) => k.x + "," + k.y)
-      .sort()
-      .join("|");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return found;
 }
+
+/** The blob closest to (x, y) within `slack`, of about the given size, or null. */
+function nearest(blobs, x, y, slack, box) {
+  let best = null;
+  let bestD = slack;
+  for (const b of blobs) {
+    if (b.box > box * GROUP_HIGH || box > b.box * GROUP_HIGH) continue;
+    const d = Math.hypot(b.x - x, b.y - y);
+    if (d < bestD) {
+      bestD = d;
+      best = b;
+    }
+  }
+  return best;
+}
+
+/**
+ * How far a predicted bottom corner may be from where a blob actually is.
+ *
+ * Generous, because a phone held off to one side keystones the page into a
+ * parallelogram, and a ten-percent lean over the page height moves the bottom
+ * corners sideways by more than a tenth of the width. The slack only widens
+ * the search; whether the result is a page is still decided by the checks
+ * that follow, so the cost of being generous is time, not mistakes.
+ */
+const CORNER_SLACK = 0.22;
 
 /**
  * Four blobs as a page, or null when they do not make one.

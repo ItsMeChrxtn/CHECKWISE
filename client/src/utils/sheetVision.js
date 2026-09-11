@@ -62,26 +62,6 @@ export function otsu(grey) {
   return best;
 }
 
-/**
- * The four corner squares, or null when they are not all in frame.
- *
- * Unlike the server, this runs on a live preview where the sheet is often only
- * partly visible, so a miss is expected and cheap - it simply means "not yet".
- *
- * The search does not assume where the sheet sits. A phone or a webcam held
- * over a desk gives a page that is smaller than the frame and a few degrees
- * rotated, so every dark blob is measured once and the four that are the same
- * size as each other and furthest apart are taken as the corners. Being the
- * same size is what separates real markers from letters and bubbles.
- */
-export function findMarkers(grey, layout) {
-  const threshold = otsu(grey);
-  const expected = (layout.markerSize / layout.pageSize.width) * grey.width;
-
-  const markers = chooseMarkerQuad(collectDarkBlobs(grey, threshold, expected), layout);
-  return markers ? { markers, threshold } : null;
-}
-
 /** A blob has to be at least this square, and this solid, to pass for a marker. */
 const MARKER_SQUARENESS = 0.55;
 const MARKER_SOLIDITY = 0.6;
@@ -93,7 +73,6 @@ const MARKER_MAX_SCALE = 1.8;
  * is the main thing telling a corner marker from the smaller page-number square
  * beside it, so the window is deliberately tight.
  */
-const GROUP_LOW = 0.75;
 const GROUP_HIGH = 1.33;
 
 /** How much the four chosen corners may differ in size from one another. */
@@ -167,71 +146,209 @@ function collectDarkBlobs(grey, threshold, expected) {
 }
 
 /**
- * The four candidates that look like the corners of the sheet.
+ * Every set of four same-size blobs that could be a page's corners, largest
+ * first.
  *
- * Markers are printed the same size, so candidates are grouped by size and each
- * group judged on its own. Within a group the corners are the extremes along
- * the two diagonals, which tolerates rotation in a way that taking the topmost
- * or leftmost blob does not.
+ * Tried four at a time rather than taking the extremes of a size group: the
+ * extremes only ever describe one quad, and with two sheets in frame that quad
+ * is the outer corners of both. Enumerating combinations finds a single page in
+ * the middle of a crowd; which of the results is actually a page is decided by
+ * looksLikeAPage, not here.
  */
-function chooseMarkerQuad(blobs, layout) {
-  if (blobs.length < 4) return null;
+function chooseMarkerQuads(blobs, layout) {
+  if (blobs.length < 4) return [];
 
   const [mx0, my0] = layout.markers[0];
   const [mx1, my1] = layout.markers[1];
   const [, my3] = layout.markers[3];
   const sheetAspect = Math.abs(mx1 - mx0) / Math.max(1, Math.abs(my3 - my1 || my3 - my0));
+  const found = [];
+  const seen = new Set();
 
-  let best = null;
-  let bestScore = 0;
+  /*
+   * Rather than every four blobs - which is O(n^4) and took two minutes on a
+   * tilted two-sheet frame - each pair is tried as a page's top edge, and the
+   * bottom corners are looked for where that edge says they must be. The sheet
+   * is a known rectangle: given its top-left and top-right, the bottom two are
+   * a fixed distance straight down from each. Perspective bends that a little,
+   * so the search allows some slack, and orderAsQuad still checks the result.
+   */
+  const tallness = 1 / sheetAspect;
 
-  for (const seed of blobs) {
-    const group = blobs.filter((b) => b.box >= seed.box * GROUP_LOW && b.box <= seed.box * GROUP_HIGH);
-    if (group.length < 4) continue;
+  for (const tl of blobs) {
+    for (const tr of blobs) {
+      if (tr === tl) continue;
+      // Same printed size, and tr to the right of tl by more than it is off level.
+      if (tr.box > tl.box * GROUP_HIGH || tl.box > tr.box * GROUP_HIGH) continue;
+      const dx = tr.x - tl.x;
+      const dy = tr.y - tl.y;
+      if (dx <= 0 || Math.abs(dy) > dx) continue;
 
-    const pick = (fn) => group.reduce((a, b) => (fn(b) < fn(a) ? b : a));
-    const corners = [
-      pick((b) => b.x + b.y),
-      pick((b) => -(b.x - b.y)),
-      pick((b) => -(b.x + b.y)),
-      pick((b) => b.x - b.y),
-    ];
-    if (new Set(corners).size < 4) continue;
+      const span = Math.hypot(dx, dy);
+      if (span < tl.box * 3) continue;
 
-    // The four markers are printed identically, so they must measure alike.
-    // Without this the page-number square along the bottom edge can slip into
-    // the group and win the bottom-left corner, which throws the whole fit.
-    const boxes = corners.map((c) => c.box);
-    if (Math.max(...boxes) / Math.min(...boxes) > MARKER_SIZE_SPREAD) continue;
+      // Down the page, perpendicular to the top edge.
+      const px = -dy / span;
+      const py = dx / span;
+      const drop = span * tallness;
+      const blX = tl.x + px * drop;
+      const blY = tl.y + py * drop;
+      const brX = tr.x + px * drop;
+      const brY = tr.y + py * drop;
+      const slack = span * CORNER_SLACK;
 
-    const spanTop = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
-    const spanLeft = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
-    if (spanTop < seed.box * 3 || spanLeft < seed.box * 3) continue;
+      const bl = nearest(blobs, blX, blY, slack, tl.box);
+      const br = nearest(blobs, brX, brY, slack, tl.box);
+      if (!bl || !br || bl === br || bl === tl || bl === tr || br === tl || br === tr) continue;
 
-    let area = 0;
-    for (let i = 0; i < 4; i += 1) {
-      const p = corners[i];
-      const q = corners[(i + 1) % 4];
-      area += p.x * q.y - q.x * p.y;
-    }
-    area = Math.abs(area) / 2;
-    if (area <= 0) continue;
+      const quad = orderAsQuad([tl, tr, br, bl], tl.box, sheetAspect);
+      if (!quad) continue;
 
-    const aspect = spanTop / spanLeft;
-    const aspectFit = 1 - Math.min(1, Math.abs(aspect - sheetAspect) / sheetAspect);
-    const shape = corners.reduce((sum, c) => sum + c.score, 0) / 4;
-    const score = area * aspectFit * shape;
-
-    if (score > bestScore) {
-      bestScore = score;
-      best = corners.map((c) => [c.x, c.y]);
+      const key = quad.corners.map((k) => k.x + "," + k.y).sort().join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      found.push(quad);
     }
   }
 
+  found.sort((a, b) => b.area - a.area);
+  return found;
+}
+
+/** The blob closest to (x, y) within `slack`, of about the given size, or null. */
+function nearest(blobs, x, y, slack, box) {
+  let best = null;
+  let bestD = slack;
+  for (const b of blobs) {
+    if (b.box > box * GROUP_HIGH || box > b.box * GROUP_HIGH) continue;
+    const d = Math.hypot(b.x - x, b.y - y);
+    if (d < bestD) {
+      bestD = d;
+      best = b;
+    }
+  }
   return best;
 }
 
-/** The 3x3 homography taking sheet points to image points, or null. */
+/**
+ * How far a predicted bottom corner may be from where a blob actually is.
+ *
+ * Generous, because a phone held off to one side keystones the page into a
+ * parallelogram, and a ten-percent lean over the page height moves the bottom
+ * corners sideways by more than a tenth of the width. The slack only widens
+ * the search; whether the result is a page is still decided by the checks
+ * that follow, so the cost of being generous is time, not mistakes.
+ */
+const CORNER_SLACK = 0.22;
+
+/** Four blobs as a page, or null when they do not make one. */
+function orderAsQuad(four, box, sheetAspect) {
+  const pick = (fn) => four.reduce((p, q) => (fn(q) < fn(p) ? q : p));
+  const tl = pick((k) => k.x + k.y);
+  const br = pick((k) => -(k.x + k.y));
+  const tr = pick((k) => -(k.x - k.y));
+  const bl = pick((k) => k.x - k.y);
+  const corners = [tl, tr, br, bl];
+  if (new Set(corners).size < 4) return null;
+
+  const boxes = corners.map((k) => k.box);
+  if (Math.max(...boxes) / Math.min(...boxes) > MARKER_SIZE_SPREAD) return null;
+
+  const spanTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+  const spanLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+  const spanBottom = Math.hypot(br.x - bl.x, br.y - bl.y);
+  const spanRight = Math.hypot(br.x - tr.x, br.y - tr.y);
+  if (spanTop < box * 3 || spanLeft < box * 3) return null;
+  if (spanTop / spanBottom > 1.25 || spanBottom / spanTop > 1.25) return null;
+  if (spanLeft / spanRight > 1.25 || spanRight / spanLeft > 1.25) return null;
+
+  let area = 0;
+  for (let i = 0; i < 4; i += 1) {
+    const p = corners[i];
+    const q = corners[(i + 1) % 4];
+    area += p.x * q.y - q.x * p.y;
+  }
+  area = Math.abs(area) / 2;
+  if (area <= 0) return null;
+
+  const aspect = spanTop / spanLeft;
+  if (aspect > sheetAspect * ASPECT_TOLERANCE || aspect < sheetAspect / ASPECT_TOLERANCE) return null;
+
+  return { corners, area };
+}
+
+/** How far a quad may depart from the sheet proportions and still be a page. */
+const ASPECT_TOLERANCE = 1.15;
+/** Coarse sanity check on marker size; the bubble fit is what decides. */
+const MARKER_SCALE_TOLERANCE = 1.3;
+/** Ink an unshaded bubble's ring leaves in a disc just wider than itself. */
+const RING_INK = 0.08;
+/** Below this share of bubbles found, the quad is not this page. */
+const MIN_BUBBLE_FIT = 0.75;
+
+/**
+ * Whether a quad is really a page, and which one.
+ *
+ * Two things only a page has. Its page-number row is a run of filled squares
+ * followed by empty ones on blank paper - dark, dark, then light to the end -
+ * and its bubbles are where the layout says. An impostor - four shaded answer
+ * bubbles, or the corners of two sheets - projects both onto whatever happens
+ * to be there, and it is never that.
+ */
+function looksLikeAPage(grey, layout, quad, threshold) {
+  const points = quad.corners.map((k) => [k.x, k.y]);
+  const transform = solveProjection(layout.markers, points);
+  if (!transform) return null;
+
+  const scale = markerSpan(layout, transform);
+  const implied = layout.markerSize * scale;
+  const actual = quad.corners.reduce((sum, k) => sum + k.box, 0) / 4;
+  const ratio = implied / actual;
+  if (ratio > MARKER_SCALE_TOLERANCE || ratio < 1 / MARKER_SCALE_TOLERANCE) return null;
+
+  const mark = layout.pageMark;
+  if (!mark) return null;
+
+  const sampleRadius = Math.max(1.5, mark.size * scale * 0.3);
+  let page = 0;
+  let ended = false;
+  for (let i = 0; i < mark.max; i += 1) {
+    const [px, py] = project(transform, mark.x + i * mark.spacing + mark.size / 2, mark.y);
+    const dark = darkFraction(grey, px, py, sampleRadius, threshold) >= 0.5;
+    if (!ended && dark) page += 1;
+    else if (!ended && !dark) ended = true;
+    else if (ended && dark) return null;
+  }
+  if (page === 0) return null;
+
+  const bubbles = layout.bubbles.filter((b) => (b.page ?? 1) === page);
+  if (bubbles.length > 0) {
+    const step = Math.max(1, Math.floor(bubbles.length / 40));
+    const radius = layout.bubbleRadius * scale * 1.15;
+    let hit = 0;
+    let tried = 0;
+    for (let i = 0; i < bubbles.length; i += step) {
+      const [px, py] = project(transform, bubbles[i].x, bubbles[i].y);
+      tried += 1;
+      if (darkFraction(grey, px, py, radius, threshold) >= RING_INK) hit += 1;
+    }
+    if (tried > 0 && hit / tried < MIN_BUBBLE_FIT) return null;
+    return { page, corners: points, fit: hit / tried };
+  }
+
+  return { page, corners: points, fit: 1 };
+}
+
+function insideQuad(x, y, quad) {
+  let inside = false;
+  for (let i = 0, j = 3; i < 4; j = i, i += 1) {
+    const [xi, yi] = quad[i];
+    const [xj, yj] = quad[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 export function solveProjection(sheetPoints, imagePoints) {
   const A = [];
   const b = [];
@@ -271,23 +388,6 @@ export function project(h, x, y) {
   return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w];
 }
 
-/** Which page is in frame, counted off the squares along the bottom edge. */
-export function readPageNumber(grey, layout, transform, threshold) {
-  const mark = layout.pageMark;
-  if (!mark) return null;
-
-  const scale = markerSpan(layout, transform);
-  const sampleRadius = Math.max(1.5, mark.size * scale * 0.3);
-
-  let count = 0;
-  for (let i = 0; i < mark.max; i += 1) {
-    const [px, py] = project(transform, mark.x + i * mark.spacing + mark.size / 2, mark.y);
-    if (darkFraction(grey, px, py, sampleRadius, threshold) < 0.5) break;
-    count += 1;
-  }
-
-  return count > 0 ? count : null;
-}
 
 /** Image pixels per sheet point, measured across the top edge. */
 function markerSpan(layout, transform) {
@@ -327,14 +427,28 @@ function darkFraction(grey, cx, cy, radius, threshold) {
  */
 export function inspectFrame(canvas, layout) {
   const grey = toGrayscale(canvas);
-  const found = findMarkers(grey, layout);
-  if (!found) return null;
+  const threshold = otsu(grey);
+  const expected = (layout.markerSize / layout.pageSize.width) * grey.width;
 
-  const transform = solveProjection(layout.markers, found.markers);
-  if (!transform) return null;
+  const candidates = chooseMarkerQuads(collectDarkBlobs(grey, threshold, expected), layout);
 
-  const page = readPageNumber(grey, layout, transform, found.threshold);
-  if (!page) return null;
+  const verified = [];
+  for (const candidate of candidates) {
+    const verdict = looksLikeAPage(grey, layout, candidate, threshold);
+    if (verdict) verified.push(verdict);
+  }
+  verified.sort((a, b) => b.fit - a.fit);
 
-  return { markers: found.markers, page };
+  // One per page number, best fit first, and nothing sitting inside a page
+  // already taken - that is the page's contents, not another page.
+  const pages = [];
+  for (const v of verified) {
+    if (pages.some((p) => p.page === v.page)) continue;
+    const cx = v.corners.reduce((sum, p) => sum + p[0], 0) / 4;
+    const cy = v.corners.reduce((sum, p) => sum + p[1], 0) / 4;
+    if (pages.some((p) => insideQuad(cx, cy, p.corners))) continue;
+    pages.push({ page: v.page, corners: v.corners });
+  }
+
+  return pages.length > 0 ? pages : null;
 }

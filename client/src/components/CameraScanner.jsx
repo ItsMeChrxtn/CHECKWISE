@@ -52,12 +52,15 @@ export default function CameraScanner({ exam, onScored, onClose }) {
   const submit = useCallback(async () => {
     const pages = [...capturedRef.current.entries()].sort((a, b) => a[0] - b[0]);
     if (pages.length === 0) return;
+    // The same photo can be filed under two pages; the server reads both
+    // pages out of it, so it is sent once.
+    const blobs = [...new Set(pages.map(([, blob]) => blob))];
 
     busyRef.current = true;
     setStatus("reading");
     try {
       const response = await resultService.scan(exam._id, {
-        files: pages.map(([, blob], index) => new File([blob], `page-${index + 1}.png`, { type: "image/png" })),
+        files: blobs.map((blob, index) => new File([blob], `shot-${index + 1}.png`, { type: "image/png" })),
       });
       setLastResult(response.data.result);
       onScored?.(response.data.result);
@@ -75,9 +78,15 @@ export default function CameraScanner({ exam, onScored, onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exam._id]);
 
-  /** Grabs the current frame at full resolution for the server to read. */
+  /**
+   * Grabs the current frame at full resolution for the server to read.
+   *
+   * One frame can show more than one page - a two-page sheet laid open on
+   * the desk - and the server reads every page it finds in a photo. So the
+   * one blob is filed under each page it showed, and submit() sends it once.
+   */
   const capture = useCallback(
-    (page) =>
+    (pages) =>
       new Promise((resolve) => {
         const video = videoRef.current;
         const canvas = captureCanvasRef.current;
@@ -89,7 +98,7 @@ export default function CameraScanner({ exam, onScored, onClose }) {
 
         canvas.toBlob((blob) => {
           if (blob) {
-            capturedRef.current.set(page, blob);
+            for (const page of pages) capturedRef.current.set(page, blob);
             setCaptured([...capturedRef.current.keys()].sort((a, b) => a - b));
           }
           resolve();
@@ -156,26 +165,35 @@ export default function CameraScanner({ exam, onScored, onClose }) {
         return;
       }
 
-      if (capturedRef.current.has(seen.page)) {
+      // Only the pages not already in hand. A frame showing both pages of a
+      // two-page sheet is captured once and counts for both.
+      const fresh = seen.map((p) => p.page).filter((page) => !capturedRef.current.has(page));
+
+      if (fresh.length === 0) {
         const missing = remainingPages(capturedRef.current, totalPages);
         setHint(
           missing.length > 0
-            ? `Page ${seen.page} is done. Now show page ${missing[0]}.`
+            ? `Page ${seen[0].page} is done. Now show page ${missing[0]}.`
             : "Reading…"
         );
         return;
       }
 
-      // The same page, steadily, for a few frames: not a blur or a half-view.
-      if (stableRef.current.page === seen.page) stableRef.current.count += 1;
-      else stableRef.current = { page: seen.page, count: 1 };
+      // The same pages, steadily, for a few frames: not a blur or a half-view.
+      const key = fresh.slice().sort((a, b) => a - b).join(",");
+      if (stableRef.current.page === key) stableRef.current.count += 1;
+      else stableRef.current = { page: key, count: 1 };
 
-      setHint(`Page ${seen.page} — hold still…`);
+      setHint(
+        fresh.length > 1
+          ? `Pages ${fresh.join(" and ")} — hold still…`
+          : `Page ${fresh[0]} — hold still…`
+      );
 
       if (stableRef.current.count >= STABLE_FRAMES) {
         stableRef.current = { page: null, count: 0 };
         busyRef.current = true;
-        capture(seen.page).then(() => {
+        capture(fresh).then(() => {
           busyRef.current = false;
           if (remainingPages(capturedRef.current, totalPages).length === 0) submit();
         });
